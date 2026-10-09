@@ -133,6 +133,8 @@ function crearGhlFalso({ contactos = {} } = {}) {
           tipo: req.headers['content-type'] || '',
           crudo: cuerpo.toString('latin1')
         });
+        // Permite simular un fallo de la Media Library (TEST 6).
+        if (estado.fallarSubida) return json({ message: 'boom en la Media Library' }, 500);
         return json({ fileId: 'file_e2e', url: `http://${req.headers.host}/cdn/factura.pdf` });
       }
 
@@ -230,18 +232,17 @@ const r1 = await publicarFacturaDeContacto({
 assert(r1.publicado === true, `La factura se publica (motivo: ${r1.motivo})`);
 assert(r1.url === `http://127.0.0.1:${puertoGhl}/cdn/factura.pdf`, 'Devuelve la URL publica real del servidor');
 assert(r1.fileId === 'file_e2e', 'Devuelve el fileId de la Media Library');
-assert(vt.estado.logins === 1, `Un solo login web en vTiger (recibido: ${vt.estado.logins})`);
-assert(vt.estado.detalles === 1, 'Consulta la vista de detalle para descubrir la plantilla');
-assert(vt.estado.pdfs === 1, 'Descarga el PDF una vez');
-assert(vt.estado.posts.length === 1 && /__vtrftk=/.test(vt.estado.posts[0].cuerpo), 'El POST de login lleva el token CSRF');
-assert(/username=usuario-web/.test(vt.estado.posts[0].cuerpo), 'El POST de login lleva el usuario web');
-assert(vt.estado.posts[0].cookie.includes('PHPSESSID=sess-e2e'), 'El POST reutiliza la cookie PHPSESSID del GET');
+// VIA B: el invoice se GENERA en el motor. El canal web de vTiger no se toca
+// (verificado contra la instancia real: vTiger no tiene plantilla PDF para estas ordenes).
+assert(vt.estado.logins === 0, `NO se loguea en vTiger: el PDF se genera localmente (recibido: ${vt.estado.logins})`);
+assert(vt.estado.pdfs === 0, 'NO se descarga ningun PDF de vTiger');
+assert(vt.estado.posts.length === 0, 'NO hay POST al canal web de vTiger');
 
 // ------------------------------------------------------------------------------
 console.log('\n[TEST 2] El PDF llega integro por multipart a la Media Library');
 assert(ghl.estado.subidas.length === 1, 'Se sube exactamente un archivo');
 const subida = ghl.estado.subidas[0];
-assert(subida.crudo.includes('%PDF-1.4'), 'El cuerpo multipart contiene el PDF real');
+assert(/%PDF-1\./.test(subida.crudo), 'El cuerpo multipart contiene un PDF real (pdfkit genera %PDF-1.3)');
 assert(subida.crudo.includes('factura_G-04212158.pdf'), 'El nombre del archivo viaja en el multipart');
 assert(/multipart\/form-data;\s*boundary=/.test(subida.tipo), 'Usa multipart/form-data con boundary');
 assert(subida.locationId === LOC, 'Sube a la location de la Cuenta Empresa');
@@ -258,12 +259,10 @@ assert(ghl.estado.auths.every(a => a === `Bearer ${PIT}`), 'Todas las llamadas a
 
 // ------------------------------------------------------------------------------
 console.log('\n[TEST 4] Idempotencia por HTTP: la segunda pasada no toca nada');
-const pdfsAntes = vt.estado.pdfs;
 const subidasAntes = ghl.estado.subidas.length;
 const putsAntes = ghl.estado.puts.length;
 const r2 = await publicarFacturaDeContacto({ contactId: 'contacto-e2e', orden: { id: '6x1', numeroOrden: 'G-04212158' }, sede: 'PALACIOS' });
 assert(r2.publicado === false && r2.motivo === 'YA_PUBLICADA', `Segunda pasada -> YA_PUBLICADA (recibido: ${r2.motivo})`);
-assert(vt.estado.pdfs === pdfsAntes, 'NO se vuelve a descargar el PDF (el corte temprano actua)');
 assert(ghl.estado.subidas.length === subidasAntes && ghl.estado.puts.length === putsAntes, 'NO se vuelve a subir ni a marcar el contacto');
 
 // ------------------------------------------------------------------------------
@@ -294,15 +293,18 @@ assert(contactoCli.customFields.find(c => c.id === 'F_NUM')?.value === 'G-777', 
 assert(contactoCli.tags.includes('FACTURA_LISTA'), 'El CLI agrego el tag que dispara el workflow');
 
 // ------------------------------------------------------------------------------
-console.log('\n[TEST 6] Credenciales web rechazadas: no se publica nada');
-const vtRechaza = crearVtigerFalso({ rechazaLogin: true });
-const puertoRechaza = await escuchar(vtRechaza.server);
-process.env.VTIGER_URL = `http://127.0.0.1:${puertoRechaza}`;
+console.log('\n[TEST 6] Fallo de la Media Library: no se marca el contacto (no se dispara el workflow)');
+// En la Via B el PDF se genera localmente, asi que el fallo relevante ya no son
+// las credenciales web sino la PUBLICACION: si GHL rechaza la subida, el contacto
+// no debe quedar marcado (y por lo tanto el cliente no recibe nada).
+process.env.VTIGER_URL = `http://127.0.0.1:${puertoVt}`;
+ghl.estado.fallarSubida = true;
 const subidasAntes6 = ghl.estado.subidas.length;
 const r6 = await publicarFacturaDeContacto({ contactId: 'contacto-cli', orden: { id: '6x9', numeroOrden: 'G-999' } });
-assert(r6.publicado === false && r6.motivo === 'PDF_NO_DISPONIBLE', `Sin PDF no se publica (recibido: ${r6.motivo})`);
-assert(ghl.estado.subidas.length === subidasAntes6, 'No se sube nada a la Media Library');
-assert(ghl.estado.contactos['contacto-cli'].customFields.every(c => c.value !== 'G-999'), 'El contacto no queda marcado con una orden sin PDF');
+assert(r6.publicado === false && r6.motivo === 'MEDIA_NO_DISPONIBLE', `Sin URL publica no se publica (recibido: ${r6.motivo})`);
+assert(ghl.estado.subidas.length === subidasAntes6 + 1, 'Se intento subir el PDF una vez');
+assert(ghl.estado.contactos['contacto-cli'].customFields.every(c => c.value !== 'G-999'), 'El contacto NO queda marcado si la publicacion falla');
+ghl.estado.fallarSubida = false;
 
 // ------------------------------------------------------------------------------
 console.log('\n[TEST 7] Fail-safe: servidor de GHL caido');
@@ -314,7 +316,6 @@ assert(['CONTACTO_ILEGIBLE', 'MEDIA_NO_DISPONIBLE', 'ESCRITURA_FALLIDA'].include
 
 // ------------------------------------------------------------------------------
 await cerrar(vt.server);
-await cerrar(vtRechaza.server);
 try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* limpieza best-effort */ }
 
 console.log('\n==========================================================');

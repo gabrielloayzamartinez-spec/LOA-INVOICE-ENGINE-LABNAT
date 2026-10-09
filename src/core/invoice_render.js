@@ -68,7 +68,8 @@ export function formatearMonto(valor = '') {
  */
 export function construirLineasDesdeOrden(orden = {}, modo = 'etiqueta') {
   const producto = String(orden.producto || orden.tratamiento || 'PRODUCTO').trim();
-  const cantidad = String(orden.cantidad || '1').trim();
+  // La cantidad se muestra con el MISMO formato que los importes (coma decimal).
+  const cantidad = formatearMonto(orden.cantidad || '1');
   const total = String(orden.total || '0').trim();
 
   if (modo === 'detalle') {
@@ -92,6 +93,31 @@ export function normalizarContactoFactura(contacto = {}) {
   ].filter(Boolean);
 
   return { nombre: (nombre || 'CLIENTE').toUpperCase(), direccionLineas: lineas };
+}
+
+/**
+ * Combina el contacto con la ORDEN para obtener los datos del documento.
+ *
+ * REGLA APRENDIDA CONTRA LA INSTANCIA REAL: el rol de API de vTiger DENIEGA los
+ * campos de direccion del contacto (cf_870/872/876/1053 y mailing*), pero SI
+ * permite los equivalentes en la ORDEN, que ademas son los correctos: la
+ * direccion de envio de ESA compra. Por eso la orden tiene prioridad.
+ *
+ * Acepta nombres de vTiger (cf_870...) y los nativos de GHL (address1, city...).
+ */
+export function contactoParaInvoice({ contacto = {}, orden = {} } = {}) {
+  const c = contacto || {};
+  const o = orden || {};
+
+  return {
+    firstname: c.firstname || c.firstName || '',
+    lastname: c.lastname || c.lastName || '',
+    phone: String(c.phone || c.mobile || c.homephone || '').trim(),
+    cf_870: String(o.direccion || c.cf_870 || c.address1 || '').trim(),
+    cf_872: String(o.zip || c.cf_872 || c.postalCode || '').trim(),
+    cf_876: String(o.ciudad || c.cf_876 || c.city || '').trim(),
+    cf_1053: String(o.estadoEnvio || c.cf_1053 || c.state || '').trim()
+  };
 }
 
 /** Nombre de archivo seguro para el invoice. */

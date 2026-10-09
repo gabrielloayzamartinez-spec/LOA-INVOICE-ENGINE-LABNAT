@@ -27,7 +27,11 @@ import path from 'path';
 import { escaparValor } from '../connectors/vtiger_webservice.js';
 
 /** Campos de la ultima orden (todos verificados contra la instancia real). */
-export const ORDEN_SELECT = ['id', 'salesorder_no', 'createdtime', 'hdnGrandTotal', 'sostatus', 'cf_1069', 'cf_3156'];
+export const ORDEN_SELECT = [
+  'id', 'salesorder_no', 'createdtime', 'hdnGrandTotal', 'sostatus',
+  'cf_1069', 'cf_3156', 'cf_3298', 'quantity',
+  'cf_870', 'cf_872', 'cf_876', 'cf_1053'
+];
 
 /** Campos del comprador. `phone`/`mobile` pueden estar restringidos: hay respaldo. */
 export const COMPRADOR_SELECT = ['id', 'spl_num_compras', 'spl_fecha_ultima_compra', 'cf_994', 'phone', 'mobile'];
@@ -42,7 +46,14 @@ export function normalizarOrden(o = {}) {
     total: String(o.hdnGrandTotal ?? '').trim(),
     estado: String(o.sostatus || '').trim(),
     tratamiento: String(o.cf_1069 || '').trim(),
-    producto: String(o.cf_3156 || '').trim()
+    producto: String(o.cf_3156 || '').trim(),
+    cantidad: String(o.cf_3298 ?? o.quantity ?? '').trim(),
+    // Direccion de envio de ESTA compra: permitida en la orden, denegada en el
+    // contacto por el rol de API (verificado contra la instancia real).
+    direccion: String(o.cf_870 || '').trim(),
+    zip: String(o.cf_872 || '').trim(),
+    ciudad: String(o.cf_876 || '').trim(),
+    estadoEnvio: String(o.cf_1053 || '').trim()
   };
 }
 

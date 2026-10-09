@@ -138,8 +138,8 @@ const r1 = await publicarFacturaDeContacto({
 assert(r1.publicado === true, `El flujo completo termina publicado (motivo: ${r1.motivo})`);
 if (!r1.publicado) console.log(`    [DIAG] motivo=${r1.motivo} detalle=${r1.detalle} llamadas=${env1.llamadas.map(l => l.metodo + ' ' + l.url).join(' | ')}`);
 assert(r1.url === 'https://cdn.ghl.test/factura_G-04212158.pdf', 'Se publica la URL devuelta por la Media Library');
-assert(env1.cuenta('module=Users&action=Login') === 1, 'Se loguea UNA vez en vTiger');
-assert(env1.cuenta('action=ExportPDF') === 1, 'Se descarga el PDF una vez');
+assert(env1.cuenta('module=Users&action=Login') === 0, 'NO se loguea en vTiger: el invoice se genera localmente (Via B)');
+assert(env1.cuenta('action=ExportPDF') === 0, 'NO se descarga ningun PDF de vTiger');
 assert(env1.cuenta('/medias/upload-file', 'POST') === 1, 'Se sube el PDF una vez a la Media Library');
 assert(env1.cuenta(`/contacts/${CONTACT_ID}`, 'PUT') === 1, 'Se marcan los campos en el contacto');
 assert(env1.cuenta(`/contacts/${CONTACT_ID}/tags`, 'POST') === 1, 'Se agrega el tag que dispara el workflow');
@@ -152,10 +152,10 @@ const tagsEscritos = JSON.parse(String(env1.llamadas.find(l => l.url.includes('/
 assert(tagsEscritos.includes(TAG_FACTURA_LISTA), `El tag enviado es ${TAG_FACTURA_LISTA}`);
 
 // ------------------------------------------------------------------------------
-console.log('\n[TEST 3] El PDF que llega a GHL es el mismo que entrego vTiger');
+console.log('\n[TEST 3] El PDF que llega a GHL es el invoice GENERADO por el motor');
 const subida = env1.llamadas.find(l => l.url.includes('/medias/upload-file'));
 const archivo = subida.body.get('file');
-assert(archivo.size === PDF.length, `El archivo subido pesa lo mismo que el PDF de vTiger (${archivo.size} bytes)`);
+assert(archivo.size > 1000, `El archivo subido es un PDF con contenido real (${archivo.size} bytes)`);
 assert(archivo.name === 'factura_G-04212158.pdf', 'El archivo subido tiene nombre legible');
 assert(subida.body.get('name') === 'factura_G-04212158.pdf', 'El multipart incluye el campo name');
 
@@ -166,7 +166,6 @@ const r2 = await publicarFacturaDeContacto({
   fieldIds: FIELD_IDS, habilitado: true, fetchImpl: env1.fetchImpl, deps: depsDe(env1)
 });
 assert(r2.publicado === false && r2.motivo === 'YA_PUBLICADA', `Segunda pasada -> YA_PUBLICADA (recibido: ${r2.motivo})`);
-assert(env1.cuenta('action=ExportPDF') === 1, 'NO se vuelve a descargar el PDF');
 assert(env1.cuenta('/medias/upload-file', 'POST') === 1, 'NO se vuelve a subir el archivo');
 assert(env1.cuenta(`/contacts/${CONTACT_ID}`, 'PUT') === 1, 'NO se reescribe el contacto (el cliente no recibe 2 mensajes)');
 

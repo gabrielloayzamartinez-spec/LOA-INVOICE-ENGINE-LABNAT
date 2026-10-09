@@ -87,10 +87,10 @@ export async function entregarFacturaDeOrden({
   }
   resultado.pasos.push('corte_temprano_ok');
 
-  // 3. PDF oficial.
+  // 3. PDF del invoice (generado en el motor con la plantilla propia).
   let pdf = null;
   try {
-    pdf = await deps.descargarPdf({ orden, numeroOrden: resultado.numeroOrden });
+    pdf = await deps.descargarPdf({ orden, numeroOrden: resultado.numeroOrden, contacto: contactoGhl });
   } catch (e) {
     pdf = { ok: false, motivo: 'EXCEPCION_DESCARGA', detalle: e.message };
   }

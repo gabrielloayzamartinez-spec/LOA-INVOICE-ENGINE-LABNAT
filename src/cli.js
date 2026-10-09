@@ -28,7 +28,7 @@ import { crearClienteSesionWeb } from './connectors/vtiger_web_session.js';
 import { verificarAccesoMedia } from './connectors/ghl_media.js';
 import { ghlFetch } from './connectors/ghl_client.js';
 import { publicarFacturaDeContacto, headersCentral } from './core/invoice_publisher.js';
-import { generarFacturaPdf, construirModeloInvoice, nombreArchivoInvoice, EMPRESA_POR_DEFECTO } from './core/invoice_render.js';
+import { generarFacturaPdf, construirModeloInvoice, nombreArchivoInvoice, EMPRESA_POR_DEFECTO, contactoParaInvoice } from './core/invoice_render.js';
 import { compararInvoiceConVtiger, formatearVerificacion } from './core/invoice_verify.js';
 import { cargarCursor, guardarCursor, podarCursor, ejecutarCiclo, normalizarOrden, ORDEN_SELECT } from './jobs/detectar_compras_nuevas.js';
 import { atenderEventoCompra } from './jobs/atender_evento.js';
@@ -149,7 +149,7 @@ async function comandoPreview() {
 
   const vt = clienteVtiger();
   const filas = await vt.consultar(
-    `SELECT id, salesorder_no, contact_id, createdtime, hdnGrandTotal, sostatus, cf_1069, cf_3156, cf_3298 FROM SalesOrder WHERE id = '${String(record).replace(/'/g, '')}' LIMIT 1`
+    `SELECT id, salesorder_no, contact_id, createdtime, hdnGrandTotal, sostatus, cf_1069, cf_3156, cf_3298, quantity, cf_870, cf_872, cf_876, cf_1053 FROM SalesOrder WHERE id = '${String(record).replace(/'/g, '')}' LIMIT 1`
   );
   if (!filas.length) return linea(`No se encontro la orden ${record} en vTiger.`);
 
@@ -161,11 +161,11 @@ async function comandoPreview() {
   if (cruda.contact_id) {
     const idContacto = String(cruda.contact_id).replace(/'/g, '');
     try {
-      const c = await vt.consultar(`SELECT id, firstname, lastname, phone, mobile, cf_870, cf_872, cf_876, cf_1053 FROM Contacts WHERE id = '${idContacto}' LIMIT 1`);
+      const c = await vt.consultar(`SELECT id, firstname, lastname, phone, mobile, homephone, cf_870, cf_872, cf_876, cf_1053 FROM Contacts WHERE id = '${idContacto}' LIMIT 1`);
       contacto = c[0] || {};
     } catch (e) {
       linea(`  [aviso] Algun campo del contacto esta restringido: ${String(e.message).slice(0, 110)}`);
-      const c = await vt.consultar(`SELECT id, firstname, lastname, phone FROM Contacts WHERE id = '${idContacto}' LIMIT 1`);
+      const c = await vt.consultar(`SELECT id, firstname, lastname, phone, mobile, homephone FROM Contacts WHERE id = '${idContacto}' LIMIT 1`);
       contacto = c[0] || {};
     }
   }
@@ -174,8 +174,9 @@ async function comandoPreview() {
   const empresa = { ...EMPRESA_POR_DEFECTO };
   if (logo) empresa.logoPath = String(logo);
 
-  const pdf = await generarFacturaPdf({ orden, contacto, empresa, modo: modoEfectivo });
-  const modelo = construirModeloInvoice({ orden, contacto, empresa, modo: modoEfectivo });
+  const contactoDoc = contactoParaInvoice({ contacto, orden });
+  const pdf = await generarFacturaPdf({ orden, contacto: contactoDoc, empresa, modo: modoEfectivo });
+  const modelo = construirModeloInvoice({ orden, contacto: contactoDoc, empresa, modo: modoEfectivo });
 
   const destino = out ? String(out) : path.join('data', 'out', nombreArchivoInvoice(orden));
   fs.mkdirSync(path.dirname(destino), { recursive: true });
@@ -321,7 +322,7 @@ async function comandoVerificar() {
     : `salesorder_no = '${String(numero).replace(/'/g, '')}'`;
 
   const filas = await vt.consultar(
-    `SELECT id, salesorder_no, contact_id, createdtime, hdnGrandTotal, sostatus, cf_1069, cf_3156, cf_3298 FROM SalesOrder WHERE ${where} LIMIT 1`
+    `SELECT id, salesorder_no, contact_id, createdtime, hdnGrandTotal, sostatus, cf_1069, cf_3156, cf_3298, quantity, cf_870, cf_872, cf_876, cf_1053 FROM SalesOrder WHERE ${where} LIMIT 1`
   );
   if (!filas.length) return linea(`No se encontro la orden (${where}).`);
   const orden = normalizarOrden(filas[0]);
@@ -331,17 +332,18 @@ async function comandoVerificar() {
   if (filas[0].contact_id) {
     const idc = String(filas[0].contact_id).replace(/'/g, '');
     try {
-      const c = await vt.consultar(`SELECT id, firstname, lastname, phone, mobile, cf_870, cf_872, cf_876, cf_1053 FROM Contacts WHERE id = '${idc}' LIMIT 1`);
+      const c = await vt.consultar(`SELECT id, firstname, lastname, phone, mobile, homephone, cf_870, cf_872, cf_876, cf_1053 FROM Contacts WHERE id = '${idc}' LIMIT 1`);
       contacto = c[0] || {};
     } catch (e) {
       permisoDireccion = false;
-      const c = await vt.consultar(`SELECT id, firstname, lastname, phone FROM Contacts WHERE id = '${idc}' LIMIT 1`);
+      const c = await vt.consultar(`SELECT id, firstname, lastname, phone, mobile, homephone FROM Contacts WHERE id = '${idc}' LIMIT 1`);
       contacto = c[0] || {};
     }
   }
 
-  const modelo = construirModeloInvoice({ orden, contacto });
-  const r = compararInvoiceConVtiger({ orden, contacto, modelo });
+  const contactoDoc = contactoParaInvoice({ contacto, orden });
+  const modelo = construirModeloInvoice({ orden, contacto: contactoDoc });
+  const r = compararInvoiceConVtiger({ orden, contacto: contactoDoc, modelo });
 
   linea('');
   linea(formatearVerificacion(r));

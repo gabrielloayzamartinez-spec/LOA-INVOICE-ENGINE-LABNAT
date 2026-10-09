@@ -20,6 +20,7 @@ import { crearClienteSesionWeb } from '../connectors/vtiger_web_session.js';
 import { subirPdfAMediaLibrary, baseGhl } from '../connectors/ghl_media.js';
 import { entregarFacturaDeOrden } from './invoice_delivery.js';
 import { CLAVES_PUENTE_FACTURA } from './invoice_bridge.js';
+import { generarFacturaPdf, contactoParaInvoice, EMPRESA_POR_DEFECTO } from './invoice_render.js';
 
 /** Nombres EXACTOS de los campos puente en GHL. */
 export const NOMBRES_CAMPOS_FACTURA = {
@@ -133,14 +134,25 @@ export async function agregarTagsContacto(contactId, tags, { headers, fetchImpl 
 }
 
 /** Construye las dependencias REALES del caso de uso. */
-export function crearDepsFactura({ apiKeyCentral, locationIdCentral, fetchImpl = null, clienteSesionWeb = null } = {}) {
+export function crearDepsFactura({ apiKeyCentral, locationIdCentral, fetchImpl = null, clienteSesionWeb = null, empresa = {} } = {}) {
   const headers = headersCentral(apiKeyCentral);
-  const cliente = clienteSesionWeb || crearClienteSesionWeb(fetchImpl ? { fetchImpl } : {});
+  // El cliente de sesion web se mantiene solo por si algun dia se reactiva la
+  // Via A (PDF oficial). El flujo vigente NO lo usa.
+  const cliente = clienteSesionWeb || null;
 
   return {
-    descargarPdf: async ({ orden }) => {
-      const r = await cliente.descargarPdfAuto({ record: orden.id, modulo: 'SalesOrder' });
-      return r.ok ? { ok: true, buf: r.buf, folderId: r.folderId } : { ok: false, motivo: 'EXPORT_PDF_SIN_PDF' };
+    // VIA B: el invoice se GENERA en el motor con la plantilla propia.
+    // Verificado contra la instancia real: vTiger NO tiene plantilla PDF para
+    // estas ordenes ("plantillas PDF encontradas: ninguna"), asi que la Via A
+    // (descargar el PDF oficial) no es aplicable.
+    descargarPdf: async ({ orden, contacto }) => {
+      try {
+        const clienteDoc = contactoParaInvoice({ contacto, orden });
+        const buf = await generarFacturaPdf({ orden, contacto: clienteDoc, empresa: { ...EMPRESA_POR_DEFECTO, ...empresa } });
+        return { ok: true, buf, generado: true };
+      } catch (e) {
+        return { ok: false, motivo: 'GENERACION_PDF_FALLIDA', detalle: e.message };
+      }
     },
 
     subirPdf: async ({ nombreArchivo, contenido }) => subirPdfAMediaLibrary({
