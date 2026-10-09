@@ -106,15 +106,19 @@ export function crearClienteVtiger({ url, username, accessKey, fetchImpl = globa
     assertOperacionPermitida('login');
     const clave = crypto.createHash('md5').update(`${token}${accessKey}`).digest('hex');
 
+    // ATENCION: el parametro se llama exactamente `accessKey` (camelCase). Con
+    // `accesskey` vTiger responde "Invalid username or password" y el fallo
+    // parece de credenciales cuando en realidad es del nombre del campo.
     const resLogin = await fetchImpl(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ operation: 'login', username, accesskey: clave }).toString()
+      body: new URLSearchParams({ operation: 'login', username, accessKey: clave }).toString()
     });
     const dataLogin = await resLogin.json().catch(() => null);
     const sesion = dataLogin?.result?.sessionName;
     if (!sesion) {
-      throw new VtigerWebserviceError(`Login de la Webservice API rechazado (HTTP ${resLogin.status}).`, { code: 'WS_LOGIN_FAILED', status: resLogin.status });
+      const motivo = dataLogin?.error?.message || dataLogin?.error?.code || JSON.stringify(dataLogin || {}).slice(0, 200);
+      throw new VtigerWebserviceError(`Login de la Webservice API rechazado (HTTP ${resLogin.status}): ${motivo}`, { code: 'WS_LOGIN_FAILED', status: resLogin.status });
     }
 
     sessionName = sesion;
@@ -132,10 +136,13 @@ export function crearClienteVtiger({ url, username, accessKey, fetchImpl = globa
   /** Ejecuta una consulta SELECT. Reintenta UNA vez si la sesion expiro. */
   async function consultar(sql, { intento = 1 } = {}) {
     assertOperacionPermitida('query');
-    assertSentenciaSoloLectura(sql);
+    // vTiger exige el `;` final: sin el responde
+    // "Syntax Error ... expected one of: SEMICOLON".
+    const sentencia = `${String(sql).trim().replace(/;+$/, '')};`;
+    assertSentenciaSoloLectura(sentencia);
 
     const sesion = await asegurarSesion();
-    const res = await fetchImpl(`${endpoint}?operation=query&sessionName=${encodeURIComponent(sesion)}&query=${encodeURIComponent(sql)}`);
+    const res = await fetchImpl(`${endpoint}?operation=query&sessionName=${encodeURIComponent(sesion)}&query=${encodeURIComponent(sentencia)}`);
     const data = await res.json().catch(() => null);
 
     const error = data?.error;

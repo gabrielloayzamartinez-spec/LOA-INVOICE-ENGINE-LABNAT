@@ -13,7 +13,8 @@
     "once": "node src/cli.js once",
     "check": "node src/cli.js check",
     "publish": "node src/cli.js publish",
-    "test": "node tests/test_config.js && node tests/test_index.js && node tests/test_invoice_bridge.js && node tests/test_vtiger_web_session.js && node tests/test_ghl_media.js && node tests/test_invoice_delivery.js && node tests/test_invoice_publisher.js && node tests/test_detector.js && node tests/test_cli.js && node tests/test_e2e_http.js",
+    "test": "node tests/test_config.js && node tests/test_index.js && node tests/test_invoice_bridge.js && node tests/test_vtiger_web_session.js && node tests/test_ghl_media.js && node tests/test_invoice_delivery.js && node tests/test_invoice_publisher.js && node tests/test_detector.js && node tests/test_render.js && node tests/test_cli.js && node tests/test_e2e_http.js",
+    "test:render": "node tests/test_render.js",
     "test:index": "node tests/test_index.js",
     "test:cli": "node tests/test_cli.js",
     "test:e2e": "node tests/test_e2e_http.js",
@@ -37,5 +38,7 @@
   "engines": {
     "node": ">=20.0.0"
   },
-  "dependencies": {}
+  "dependencies": {
+    "pdfkit": "^0.20.2"
+  }
 }

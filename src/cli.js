@@ -28,6 +28,7 @@ import { crearClienteSesionWeb } from './connectors/vtiger_web_session.js';
 import { verificarAccesoMedia } from './connectors/ghl_media.js';
 import { ghlFetch } from './connectors/ghl_client.js';
 import { publicarFacturaDeContacto, headersCentral } from './core/invoice_publisher.js';
+import { generarFacturaPdf, construirModeloInvoice, nombreArchivoInvoice, EMPRESA_POR_DEFECTO } from './core/invoice_render.js';
 import { cargarCursor, guardarCursor, podarCursor, ejecutarCiclo, normalizarOrden, ORDEN_SELECT } from './jobs/detectar_compras_nuevas.js';
 
 cargarEnv();
@@ -135,6 +136,59 @@ async function comandoTestPdf() {
 }
 
 // ------------------------------------------------------------------------------
+// COMANDO: preview
+// ------------------------------------------------------------------------------
+async function comandoPreview() {
+  const { record, out, modo, logo } = args();
+  titulo('PREVIEW - Invoice con datos REALES de vTiger (NO publica nada)');
+  if (!record) return linea('Falta --record=<id de SalesOrder>. Ej: --record=6x35385');
+
+  const vt = clienteVtiger();
+  const filas = await vt.consultar(
+    `SELECT id, salesorder_no, contact_id, createdtime, hdnGrandTotal, sostatus, cf_1069, cf_3156, cf_3298 FROM SalesOrder WHERE id = '${String(record).replace(/'/g, '')}' LIMIT 1`
+  );
+  if (!filas.length) return linea(`No se encontro la orden ${record} en vTiger.`);
+
+  const cruda = filas[0];
+  const orden = normalizarOrden(cruda);
+
+  // Datos del cliente (los mismos de la etiqueta de envio).
+  let contacto = {};
+  if (cruda.contact_id) {
+    const idContacto = String(cruda.contact_id).replace(/'/g, '');
+    try {
+      const c = await vt.consultar(`SELECT id, firstname, lastname, phone, mobile, cf_870, cf_872, cf_876, cf_1053 FROM Contacts WHERE id = '${idContacto}' LIMIT 1`);
+      contacto = c[0] || {};
+    } catch (e) {
+      linea(`  [aviso] Algun campo del contacto esta restringido: ${String(e.message).slice(0, 110)}`);
+      const c = await vt.consultar(`SELECT id, firstname, lastname, phone FROM Contacts WHERE id = '${idContacto}' LIMIT 1`);
+      contacto = c[0] || {};
+    }
+  }
+
+  const modoEfectivo = modo === 'detalle' ? 'detalle' : 'etiqueta';
+  const empresa = { ...EMPRESA_POR_DEFECTO };
+  if (logo) empresa.logoPath = String(logo);
+
+  const pdf = await generarFacturaPdf({ orden, contacto, empresa, modo: modoEfectivo });
+  const modelo = construirModeloInvoice({ orden, contacto, empresa, modo: modoEfectivo });
+
+  const destino = out ? String(out) : path.join('data', 'out', nombreArchivoInvoice(orden));
+  fs.mkdirSync(path.dirname(destino), { recursive: true });
+  fs.writeFileSync(destino, pdf);
+
+  linea(`  Orden      : ${orden.numeroOrden}  (record ${orden.id})`);
+  linea(`  Fecha      : ${orden.fecha}`);
+  linea(`  Total      : ${modelo.total} USD`);
+  linea(`  Cliente    : ${modelo.cliente.nombre}`);
+  linea(`  Envio      : ${modelo.cliente.lineas.join(' / ') || '(sin direccion en vTiger)'}`);
+  linea(`  Emisor     : ${modelo.emisor.nombre}`);
+  linea(`  Lineas     : ${modelo.tabla.filas.map(f => `${f.texto}${f.cantidad ? ` x${f.cantidad}` : ''} = ${f.total}`).join('  |  ')}`);
+  linea(`  PDF        : ${pdf.length} bytes -> ${destino}`);
+  linea('  (Muestra local: no se subio nada a GHL y no se publico ninguna factura.)');
+}
+
+// ------------------------------------------------------------------------------
 // COMANDO: publish
 // ------------------------------------------------------------------------------
 async function comandoPublish() {
@@ -223,6 +277,7 @@ async function comandoScan() {
 const comandos = {
   check: comandoCheck,
   'test-pdf': comandoTestPdf,
+  preview: comandoPreview,
   publish: comandoPublish,
   once: comandoOnce,
   scan: comandoScan
