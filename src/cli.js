@@ -29,6 +29,7 @@ import { verificarAccesoMedia } from './connectors/ghl_media.js';
 import { ghlFetch } from './connectors/ghl_client.js';
 import { publicarFacturaDeContacto, headersCentral } from './core/invoice_publisher.js';
 import { generarFacturaPdf, construirModeloInvoice, nombreArchivoInvoice, EMPRESA_POR_DEFECTO } from './core/invoice_render.js';
+import { compararInvoiceConVtiger, formatearVerificacion } from './core/invoice_verify.js';
 import { cargarCursor, guardarCursor, podarCursor, ejecutarCiclo, normalizarOrden, ORDEN_SELECT } from './jobs/detectar_compras_nuevas.js';
 import { atenderEventoCompra } from './jobs/atender_evento.js';
 import { iniciarServidorEventos } from './webhook_server.js';
@@ -79,7 +80,8 @@ async function comandoCheck() {
   titulo('CHECK - Estado del motor de facturas (no publica nada)');
   linea(JSON.stringify(resumenConfig(cfg), null, 2));
 
-  const v = validarConfig(cfg, { webservice: true, sesionWeb: true, ghl: true });
+  // La sesion web de vTiger (Via A) YA NO se usa: el invoice se genera localmente.
+  const v = validarConfig(cfg, { webservice: true, sesionWeb: false, ghl: true });
   linea(`\nConfiguracion: ${v.ok ? 'COMPLETA' : `FALTAN -> ${v.faltantes.join(', ')}`}`);
   if (!cfg.habilitado) linea('Interruptor: APAGADO (INVOICE_PDF_ENABLED=false). Nada se publicara.');
 
@@ -109,7 +111,7 @@ async function comandoCheck() {
       linea(`vTiger sesion web: ERROR -> ${e.code || e.name}: ${e.message}`);
     }
   } else {
-    linea('\nvTiger sesion web: sin credenciales (VTIGER_WEB_USERNAME / VTIGER_WEB_PASSWORD)');
+    linea('\nvTiger sesion web: no configurada (no hace falta: el invoice se genera con la plantilla propia)');
   }
 
   titulo('Ultimos eventos de auditoria');
@@ -277,7 +279,7 @@ async function unCiclo({ cursor, rutaCursor }) {
 
 async function comandoOnce() {
   titulo('ONCE - Recuperacion manual: un barrido de compras (el flujo normal es por evento)');
-  const validacion = validarConfig(cfg, { webservice: true, sesionWeb: true, ghl: true });
+  const validacion = validarConfig(cfg, { webservice: true, sesionWeb: false, ghl: true });
   if (!validacion.ok) return linea(`[STOP] Faltan variables: ${validacion.faltantes.join(', ')}`);
   if (!cfg.habilitado) return linea('[STOP] El interruptor esta APAGADO. Poner INVOICE_PDF_ENABLED=true para publicar.');
 
@@ -287,7 +289,7 @@ async function comandoOnce() {
 
 async function comandoScan() {
   titulo(`SCAN - Recuperacion continua cada ${cfg.escaneo.intervaloMinutos} minuto(s) (el flujo normal es por evento)`);
-  const validacion = validarConfig(cfg, { webservice: true, sesionWeb: true, ghl: true });
+  const validacion = validarConfig(cfg, { webservice: true, sesionWeb: false, ghl: true });
   if (!validacion.ok) return linea(`[STOP] Faltan variables: ${validacion.faltantes.join(', ')}`);
   if (!cfg.habilitado) return linea('[STOP] El interruptor esta APAGADO. Poner INVOICE_PDF_ENABLED=true para publicar.');
 
@@ -306,11 +308,62 @@ async function comandoScan() {
 }
 
 // ------------------------------------------------------------------------------
+// COMANDO: verificar
+// ------------------------------------------------------------------------------
+async function comandoVerificar() {
+  const { record, numero } = args();
+  titulo('VERIFICAR - El invoice contra vTiger, campo por campo (solo lee, no publica)');
+  if (!record && !numero) return linea('Falta --record=<id de SalesOrder> o --numero=<S-XXXXX>.');
+
+  const vt = clienteVtiger();
+  const where = record
+    ? `id = '${String(record).replace(/'/g, '')}'`
+    : `salesorder_no = '${String(numero).replace(/'/g, '')}'`;
+
+  const filas = await vt.consultar(
+    `SELECT id, salesorder_no, contact_id, createdtime, hdnGrandTotal, sostatus, cf_1069, cf_3156, cf_3298 FROM SalesOrder WHERE ${where} LIMIT 1`
+  );
+  if (!filas.length) return linea(`No se encontro la orden (${where}).`);
+  const orden = normalizarOrden(filas[0]);
+
+  let contacto = {};
+  let permisoDireccion = true;
+  if (filas[0].contact_id) {
+    const idc = String(filas[0].contact_id).replace(/'/g, '');
+    try {
+      const c = await vt.consultar(`SELECT id, firstname, lastname, phone, mobile, cf_870, cf_872, cf_876, cf_1053 FROM Contacts WHERE id = '${idc}' LIMIT 1`);
+      contacto = c[0] || {};
+    } catch (e) {
+      permisoDireccion = false;
+      const c = await vt.consultar(`SELECT id, firstname, lastname, phone FROM Contacts WHERE id = '${idc}' LIMIT 1`);
+      contacto = c[0] || {};
+    }
+  }
+
+  const modelo = construirModeloInvoice({ orden, contacto });
+  const r = compararInvoiceConVtiger({ orden, contacto, modelo });
+
+  linea('');
+  linea(formatearVerificacion(r));
+  linea('');
+  linea(`  Orden verificada    : ${orden.numeroOrden} (record ${orden.id})`);
+  linea(`  Veredicto           : ${r.consistente ? 'CONSISTENTE (el invoice coincide con vTiger)' : 'REVISAR'}`);
+  if (r.diferencias.length) linea(`  Diferencias         : ${r.diferencias.join(', ')}`);
+  if (r.faltantesEnVtiger.length) linea(`  vTiger NO entrego   : ${r.faltantesEnVtiger.join(', ')}`);
+  if (!permisoDireccion) {
+    linea('  Causa probable      : el usuario de la API no tiene permiso sobre cf_870 (direccion).');
+    linea('                        Pedir al administrador de vTiger que habilite ese campo, o el invoice saldra sin direccion.');
+  }
+  linea('  (Solo lectura en vTiger. No se publico nada en GHL.)');
+}
+
+// ------------------------------------------------------------------------------
 // DESPACHO
 // ------------------------------------------------------------------------------
 const comandos = {
   serve: comandoServe,
   check: comandoCheck,
+  verificar: comandoVerificar,
   'test-pdf': comandoTestPdf,
   preview: comandoPreview,
   publish: comandoPublish,

@@ -126,6 +126,7 @@ const fOk = fetchFalso(() => respuestaGhl({ files: [] }));
 const vOk = await verificarAccesoMedia({ locationId: LOC, apiKey: KEY, fetchImpl: fOk.impl });
 assert(vOk.ok === true, 'Con scope medias.read el acceso se verifica OK');
 assert(fOk.llamadas[0].method === 'GET', 'La verificacion es de solo lectura (GET)');
+assert(/type=file/.test(fOk.llamadas[0].url), 'La verificacion incluye el parametro obligatorio `type` (GHL responde 422 sin el)');
 const fNo = fetchFalso(() => respuestaGhl({ statusCode: 401 }, { status: 401 }));
 const vNo = await verificarAccesoMedia({ locationId: LOC, apiKey: KEY, fetchImpl: fNo.impl });
 assert(vNo.ok === false && vNo.motivo === MOTIVOS_MEDIA.TOKEN_INVALIDO, 'Con token invalido lo reporta sin romper');

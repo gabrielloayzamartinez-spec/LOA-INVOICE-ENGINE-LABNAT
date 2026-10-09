@@ -119,7 +119,9 @@ export async function verificarAccesoMedia({ locationId, apiKey, fetchImpl = nul
   if (!locationId || !apiKey) return { ok: false, motivo: MOTIVOS_MEDIA.PARAMS, status: 0, detalle: 'Faltan locationId o apiKey.' };
 
   const enviar = fetchImpl || ((url, opciones) => ghlFetch(url, opciones, 1, caller));
-  const url = `${baseGhl()}/medias/files?locationId=${encodeURIComponent(locationId)}&limit=1`;
+  // GHL exige el parametro `type` (verificado contra la cuenta real: sin el
+  // responde 422 "type must be a string / type should not be empty").
+  const url = `${baseGhl()}/medias/files?locationId=${encodeURIComponent(locationId)}&type=file&limit=1`;
 
   try {
     const res = await enviar(url, { method: 'GET', headers: headersMedia(apiKey) });
