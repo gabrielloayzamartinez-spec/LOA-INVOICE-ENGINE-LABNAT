@@ -1,0 +1,38 @@
+{
+  "name": "loa-invoice-engine",
+  "version": "1.0.0",
+  "description": "Motor independiente de facturas PDF: detecta compras nuevas en vTiger, descarga el PDF oficial, lo publica en la Media Library de la Cuenta Empresa de GHL y marca el contacto para que un workflow lo envie al cliente.",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "loa-invoice": "src/cli.js"
+  },
+  "scripts": {
+    "start": "node src/cli.js scan",
+    "scan": "node src/cli.js scan",
+    "once": "node src/cli.js once",
+    "check": "node src/cli.js check",
+    "publish": "node src/cli.js publish",
+    "test": "node tests/test_config.js && node tests/test_invoice_bridge.js && node tests/test_vtiger_web_session.js && node tests/test_ghl_media.js && node tests/test_invoice_delivery.js && node tests/test_invoice_publisher.js && node tests/test_detector.js",
+    "test:bridge": "node tests/test_invoice_bridge.js",
+    "test:websession": "node tests/test_vtiger_web_session.js",
+    "test:media": "node tests/test_ghl_media.js",
+    "test:delivery": "node tests/test_invoice_delivery.js",
+    "test:publisher": "node tests/test_invoice_publisher.js",
+    "test:detector": "node tests/test_detector.js"
+  },
+  "keywords": [
+    "invoice",
+    "pdf",
+    "vtiger",
+    "gohighlevel",
+    "whatsapp"
+  ],
+  "author": "LOA Engine",
+  "license": "UNLICENSED",
+  "private": true,
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {}
+}

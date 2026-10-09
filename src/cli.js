@@ -1,0 +1,246 @@
+#!/usr/bin/env node
+/**
+ * ==============================================================================
+ * LOA INVOICE ENGINE - CLI
+ * ==============================================================================
+ * Comandos:
+ *   check     Valida configuracion y accesos (NO publica nada).
+ *   test-pdf  Descarga el PDF de una orden y lo guarda (diagnostico, sin publicar).
+ *   publish   Publica la factura de UNA orden de UN contacto (prueba controlada).
+ *   once      Un ciclo completo: detecta compras recientes y publica.
+ *   scan      Ciclo continuo cada INVOICE_SCAN_INTERVAL_MINUTES.
+ *
+ * Uso:
+ *   node src/cli.js check
+ *   node src/cli.js test-pdf --record=6x35385
+ *   node src/cli.js publish --contact=CONTACT_ID --order=6x35385 --numero=G-04212158
+ *   node src/cli.js once
+ *   node src/cli.js scan
+ * ==============================================================================
+ */
+
+import fs from 'fs';
+import path from 'path';
+import { cargarEnv, configFactura, validarConfig, resumenConfig } from './config.js';
+import { configurarAuditoria, recordAuditEvent, leerAuditoria } from './core/audit.js';
+import { crearClienteVtiger } from './connectors/vtiger_webservice.js';
+import { crearClienteSesionWeb } from './connectors/vtiger_web_session.js';
+import { verificarAccesoMedia } from './connectors/ghl_media.js';
+import { ghlFetch } from './connectors/ghl_client.js';
+import { publicarFacturaDeContacto, headersCentral } from './core/invoice_publisher.js';
+import { cargarCursor, guardarCursor, podarCursor, ejecutarCiclo, normalizarOrden, ORDEN_SELECT } from './jobs/detectar_compras_nuevas.js';
+
+cargarEnv();
+const cfg = configFactura();
+configurarAuditoria({ dir: cfg.logs.dir });
+
+function args() {
+  const salida = {};
+  for (const a of process.argv.slice(3)) {
+    const m = /^--([^=]+)=(.*)$/.exec(a);
+    if (m) salida[m[1]] = m[2];
+    else if (a.startsWith('--')) salida[a.slice(2)] = true;
+  }
+  return salida;
+}
+
+function linea(t = '') { console.log(t); }
+function titulo(t) { linea(`\n${'='.repeat(70)}\n ${t}\n${'='.repeat(70)}`); }
+
+function clienteVtiger() {
+  return crearClienteVtiger({ url: cfg.vtiger.url, username: cfg.vtiger.username, accessKey: cfg.vtiger.accessKey });
+}
+
+/** Busca el contacto en GHL por telefono (lookup). Devuelve el id o null. */
+async function buscarContactoGhl(telefono, { fetchImpl = null } = {}) {
+  if (!telefono) return null;
+  const headers = headersCentral(cfg.ghl.apiKeyCentral);
+  const url = `https://services.leadconnectorhq.com/contacts/lookup?locationId=${encodeURIComponent(cfg.ghl.locationIdCentral)}&phone=${encodeURIComponent(telefono)}`;
+  const enviar = fetchImpl || ((u, o) => ghlFetch(u, o, 1, 'InvoiceLookup'));
+
+  try {
+    const res = await enviar(url, { method: 'GET', headers });
+    const texto = await (res.text ? res.text().catch(() => '') : Promise.resolve(''));
+    if (!res.ok) return null;
+    const cuerpo = JSON.parse(texto);
+    return cuerpo?.contact?.id || cuerpo?.contacts?.[0]?.id || null;
+  } catch {
+    return null;
+  }
+}
+
+// ------------------------------------------------------------------------------
+// COMANDO: check
+// ------------------------------------------------------------------------------
+async function comandoCheck() {
+  titulo('CHECK - Estado del motor de facturas (no publica nada)');
+  linea(JSON.stringify(resumenConfig(cfg), null, 2));
+
+  const v = validarConfig(cfg, { webservice: true, sesionWeb: true, ghl: true });
+  linea(`\nConfiguracion: ${v.ok ? 'COMPLETA' : `FALTAN -> ${v.faltantes.join(', ')}`}`);
+  if (!cfg.habilitado) linea('Interruptor: APAGADO (INVOICE_PDF_ENABLED=false). Nada se publicara.');
+
+  if (cfg.ghl.apiKeyCentral && cfg.ghl.locationIdCentral) {
+    const acceso = await verificarAccesoMedia({ locationId: cfg.ghl.locationIdCentral, apiKey: cfg.ghl.apiKeyCentral });
+    linea(`\nMedia Library: ${acceso.ok ? 'ACCESIBLE' : `NO ACCESIBLE -> ${acceso.motivo} (${acceso.status})`}`);
+    if (!acceso.ok) linea('  Un 401 = token invalido; un 403 = falta el scope medias.read/medias.write.');
+  }
+
+  if (cfg.vtiger.url && cfg.vtiger.username && cfg.vtiger.accessKey) {
+    try {
+      const vt = clienteVtiger();
+      const filas = await vt.consultar("SELECT id FROM Contacts WHERE cf_3451 = 'PALACIOS' AND spl_num_compras > 0 LIMIT 1");
+      linea(`\nvTiger webservice: OK (${filas.length} comprador de prueba leido)`);
+    } catch (e) {
+      linea(`\nvTiger webservice: ERROR -> ${e.message}`);
+    }
+  }
+
+  if (cfg.vtiger.webUsername && cfg.vtiger.webPassword) {
+    const sesion = crearClienteSesionWeb();
+    try {
+      await sesion.asegurarSesion();
+      linea('vTiger sesion web: OK (login correcto)');
+      sesion.cerrar();
+    } catch (e) {
+      linea(`vTiger sesion web: ERROR -> ${e.code || e.name}: ${e.message}`);
+    }
+  } else {
+    linea('\nvTiger sesion web: sin credenciales (VTIGER_WEB_USERNAME / VTIGER_WEB_PASSWORD)');
+  }
+
+  titulo('Ultimos eventos de auditoria');
+  for (const ev of leerAuditoria(5)) linea(`  ${ev.ts || ''} ${ev.type || ''} ${ev.message || ''}`.slice(0, 160));
+}
+
+// ------------------------------------------------------------------------------
+// COMANDO: test-pdf
+// ------------------------------------------------------------------------------
+async function comandoTestPdf() {
+  const { record } = args();
+  titulo('TEST-PDF - Descarga del PDF oficial (no publica)');
+  if (!record) return linea('Falta --record=<id de SalesOrder>.');
+
+  const sesion = crearClienteSesionWeb();
+  const carpeta = await sesion.descubrirFolderIds({ record, modulo: 'SalesOrder' });
+  linea(`Plantillas PDF encontradas: ${carpeta.length ? carpeta.join(', ') : 'ninguna'}`);
+
+  const r = await sesion.descargarPdfAuto({ record, modulo: 'SalesOrder' });
+  if (!r.ok) return linea(`[BLOQUEADO] No se obtuvo el PDF (folderId=${r.folderId}, intentos=${r.intentos}).`);
+
+  const destino = path.join('data', 'out', `factura_${String(record).replace(/[^A-Za-z0-9-]/g, '')}.pdf`);
+  fs.mkdirSync(path.dirname(destino), { recursive: true });
+  fs.writeFileSync(destino, r.buf);
+  linea(`[OK] PDF de ${r.buf.length} bytes guardado en ${destino}`);
+}
+
+// ------------------------------------------------------------------------------
+// COMANDO: publish
+// ------------------------------------------------------------------------------
+async function comandoPublish() {
+  const { contact, order, numero } = args();
+  titulo('PUBLISH - Publicar la factura de UNA orden (prueba controlada)');
+  if (!contact || !order) return linea('Uso: node src/cli.js publish --contact=CONTACT_ID --order=RECORD_ID [--numero=G-XXXX]');
+
+  const orden = { id: String(order), numeroOrden: numero ? String(numero) : '' };
+  if (!orden.numeroOrden) {
+    const vt = clienteVtiger();
+    const filas = await vt.consultar(`SELECT ${ORDEN_SELECT.join(', ')} FROM SalesOrder WHERE id = '${orden.id}' LIMIT 1`);
+    if (!filas.length) return linea(`No se encontro la orden ${orden.id} en vTiger.`);
+    Object.assign(orden, normalizarOrden(filas[0]));
+  }
+
+  linea(`Orden: ${orden.numeroOrden} (record ${orden.id}) | contacto GHL: ${contact}`);
+  const resultado = await publicarFacturaDeContacto({ contactId: String(contact), orden, habilitado: true, sede: cfg.escaneo.sede });
+  linea(`\nResultado: ${JSON.stringify(resultado, null, 2)}`);
+}
+
+// ------------------------------------------------------------------------------
+// COMANDOS: once / scan
+// ------------------------------------------------------------------------------
+async function unCiclo({ cursor, rutaCursor }) {
+  const vt = clienteVtiger();
+  const resumen = await ejecutarCiclo({
+    clienteVtiger: vt,
+    publicar: (candidato) => publicarFacturaDeContacto({
+      contactId: candidato.contactId,
+      orden: candidato.orden,
+      sede: cfg.escaneo.sede
+    }),
+    cursor,
+    sede: cfg.escaneo.sede,
+    dias: cfg.escaneo.dias,
+    lote: cfg.escaneo.lote,
+    buscarContactoGhl: (tel) => buscarContactoGhl(tel)
+  });
+
+  const podado = podarCursor(cursor, { maxEntradas: 5000 });
+  const guardado = guardarCursor(rutaCursor, podado);
+
+  linea(`\nRevisados: ${resumen.deteccion.revisados} | Candidatos: ${resumen.deteccion.candidatos.length} | Publicadas: ${resumen.publicaciones.filter(p => p.resultado?.publicado).length} | Marcadas en cursor: ${resumen.marcadas}`);
+  for (const o of resumen.deteccion.omitidos.slice(0, 10)) linea(`  omitido ${o.vTigerId}: ${o.motivo}`);
+  for (const e of resumen.deteccion.errores.slice(0, 10)) linea(`  error ${e.vTigerId} (${e.etapa}): ${e.detalle}`);
+  for (const p of resumen.publicaciones) linea(`  ${p.resultado?.publicado ? '[PUBLICADA]' : '[NO]'} ${p.orden.numeroOrden} -> ${p.resultado?.motivo}${p.resultado?.url ? ` | ${p.resultado.url}` : ''}`);
+  linea(`Cursor: ${guardado.ok ? 'guardado' : `ERROR ${guardado.error}`} (${rutaCursor})`);
+
+  recordAuditEvent({ type: 'INVOICE_CICLO', severity: 'info', message: `Ciclo completado: ${resumen.deteccion.candidatos.length} candidatos, ${resumen.publicaciones.filter(p => p.resultado?.publicado).length} publicadas.` });
+  return resumen;
+}
+
+async function comandoOnce() {
+  titulo('ONCE - Un ciclo de deteccion + publicacion');
+  const validacion = validarConfig(cfg, { webservice: true, sesionWeb: true, ghl: true });
+  if (!validacion.ok) return linea(`[STOP] Faltan variables: ${validacion.faltantes.join(', ')}`);
+  if (!cfg.habilitado) return linea('[STOP] El interruptor esta APAGADO. Poner INVOICE_PDF_ENABLED=true para publicar.');
+
+  const rutaCursor = cfg.escaneo.cursorPath;
+  await unCiclo({ cursor: cargarCursor(rutaCursor), rutaCursor });
+}
+
+async function comandoScan() {
+  titulo(`SCAN - Ciclo continuo cada ${cfg.escaneo.intervaloMinutos} minuto(s)`);
+  const validacion = validarConfig(cfg, { webservice: true, sesionWeb: true, ghl: true });
+  if (!validacion.ok) return linea(`[STOP] Faltan variables: ${validacion.faltantes.join(', ')}`);
+  if (!cfg.habilitado) return linea('[STOP] El interruptor esta APAGADO. Poner INVOICE_PDF_ENABLED=true para publicar.');
+
+  const rutaCursor = cfg.escaneo.cursorPath;
+  const cursor = cargarCursor(rutaCursor);
+  const intervaloMs = cfg.escaneo.intervaloMinutos * 60 * 1000;
+
+  const correr = async () => {
+    try { await unCiclo({ cursor, rutaCursor }); }
+    catch (e) { recordAuditEvent({ type: 'INVOICE_CICLO_FALLIDO', severity: 'error', message: e.message }); }
+  };
+
+  await correr();
+  setInterval(correr, intervaloMs);
+  linea(`\nMotor en marcha. Proximo ciclo en ${cfg.escaneo.intervaloMinutos} minuto(s). Ctrl+C para detener.`);
+}
+
+// ------------------------------------------------------------------------------
+// DESPACHO
+// ------------------------------------------------------------------------------
+const comandos = {
+  check: comandoCheck,
+  'test-pdf': comandoTestPdf,
+  publish: comandoPublish,
+  once: comandoOnce,
+  scan: comandoScan
+};
+
+const comando = process.argv[2] || 'check';
+const ejecutar = comandos[comando];
+
+if (!ejecutar) {
+  linea(`Comando desconocido: ${comando}`);
+  linea(`Disponibles: ${Object.keys(comandos).join(', ')}`);
+  process.exitCode = 1;
+} else {
+  try {
+    await ejecutar();
+  } catch (e) {
+    recordAuditEvent({ type: 'INVOICE_CLI_ERROR', severity: 'error', message: `${comando}: ${e.message}` });
+    linea(`\n[ERROR] ${e.message}`);
+    process.exitCode = 1;
+  }
+}

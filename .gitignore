@@ -1,0 +1,23 @@
+# Secretos y datos de ejecucion: NUNCA al repositorio.
+.env
+.env.local
+
+# Estado persistido (cursor de compras procesadas, logs, auditoria).
+data/
+
+# Salidas de diagnostico (PDFs de prueba).
+scratch/
+out/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Sistema operativo / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
