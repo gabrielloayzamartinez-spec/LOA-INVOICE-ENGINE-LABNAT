@@ -142,21 +142,24 @@ npm run test:e2e            # integración por HTTP real: servidores vTiger y GH
 ```
 src/
 ├── config.js                     Configuración y validación (sin dependencias)
-├── cli.js                        check | test-pdf | publish | once | scan
+├── cli.js                        check | preview | test-pdf | publish | once | scan
 ├── index.js                      API pública
 ├── core/
 │   ├── invoice_bridge.js         Contrato + idempotencia (funciones puras)
-│   ├── invoice_delivery.js       Caso de uso (descarga → publica → marca)
+│   ├── invoice_delivery.js       Caso de uso (genera → publica → marca)
+│   ├── invoice_render.js         Plantilla del invoice (modelo + PDF con pdfkit)
 │   ├── invoice_publisher.js      Cableado real + resolución de campos por nombre
 │   └── audit.js                  Auditoría JSONL
 ├── connectors/
 │   ├── vtiger_webservice.js      Webservice (challenge/login/query) con candado
-│   ├── vtiger_web_session.js     Sesión web + ExportPDF (PDF oficial)
+│   ├── vtiger_web_session.js     Sesión web + ExportPDF (Vía A, no usada hoy)
 │   ├── ghl_media.js              Media Library (subida + URL pública)
 │   └── ghl_client.js             HTTP con timeout y reintentos (429/red)
 └── jobs/
-    └── detectar_compras_nuevas.js  Detección + cursor + ciclo
-tests/                            10 suites, 338 asserts
+    └── detectar_compras_nuevas.js  Detección (cf_994 = VENDIDO) + cursor + ciclo
+docs/
+└── FLUJOGRAMAS_PROCESOS.md       Flujograma completo: actores, fronteras y micro-procesos
+tests/                            11 suites, 390 asserts
 ```
 
 ---
