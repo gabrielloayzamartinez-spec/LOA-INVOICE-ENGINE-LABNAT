@@ -116,6 +116,18 @@ assert(sqlCompradores.includes('ORDER BY spl_fecha_ultima_compra DESC'), 'Ordena
 assert(sqlCompradores.includes('LIMIT 25'), 'Respeta el tamaño de lote');
 assert(d1.fechaCorte === '2026-10-02', 'La ventana de dias se calcula correctamente');
 
+console.log('\n[TEST 3b] DISPARADOR: solo compras marcadas como efectuadas (cf_994)');
+assert(sqlCompradores.includes("cf_994 = 'VENDIDO'"), 'La consulta exige la marca de compra efectuada (cf_994 = VENDIDO)');
+assert(d1.estadoCompra === 'VENDIDO', 'Reporta el estado de compra usado como disparador');
+assert(COMPRADOR_SELECT.includes('cf_994'), 'Trae el estado de compra del contacto (auditable)');
+const vtSinEstado = crearVtigerFalso({ compradores, ordenes });
+const dSinEstado = await detectarComprasNuevas({
+  clienteVtiger: vtSinEstado, sede: 'PALACIOS', estadoCompra: '',
+  buscarContactoGhl: async () => 'ghl-1', ahora: new Date('2026-10-09T12:00:00Z')
+});
+assert(!vtSinEstado.consultas[0].includes("cf_994 = '"), 'Con estadoCompra vacio NO filtra por estado en el WHERE (solo diagnostico)');
+assert(dSinEstado.estadoCompra === null, 'Reporta null cuando no hay filtro de estado');
+
 const vtFallback = crearVtigerFalso({ compradores, ordenes, fallaTelefonos: true });
 const dFallback = await detectarComprasNuevas({ clienteVtiger: vtFallback, sede: 'BENAVIDES', dias: 7, buscarContactoGhl: async () => 'ghl-x' });
 assert(vtFallback.consultas.length > 0 && !/phone/.test(vtFallback.consultas[1] || ''), 'Si el rol restringe los telefonos, reintenta sin esos campos');

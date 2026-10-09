@@ -84,6 +84,8 @@ export function configFactura() {
       lote: Math.min(Math.max(envInt('INVOICE_SCAN_BATCH', 25), 1), 200),
       dias: Math.min(Math.max(envInt('INVOICE_SCAN_DIAS', 7), 1), 90),
       sede: String(env('INVOICE_SCAN_SEDE', 'PALACIOS')).toUpperCase(),
+      // Marca que deja el personal cuando la compra queda EFECTUADA (vTiger cf_994).
+      estadoCompra: String(env('INVOICE_ESTADO_COMPRA', 'VENDIDO')).trim(),
       cursorPath: env('INVOICE_CURSOR_PATH', 'data/cursor.json')
     },
     logs: {

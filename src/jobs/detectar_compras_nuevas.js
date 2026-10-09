@@ -30,8 +30,8 @@ import { escaparValor } from '../connectors/vtiger_webservice.js';
 export const ORDEN_SELECT = ['id', 'salesorder_no', 'createdtime', 'hdnGrandTotal', 'sostatus', 'cf_1069', 'cf_3156'];
 
 /** Campos del comprador. `phone`/`mobile` pueden estar restringidos: hay respaldo. */
-export const COMPRADOR_SELECT = ['id', 'spl_num_compras', 'spl_fecha_ultima_compra', 'phone', 'mobile'];
-export const COMPRADOR_SELECT_MINIMO = ['id', 'spl_num_compras', 'spl_fecha_ultima_compra'];
+export const COMPRADOR_SELECT = ['id', 'spl_num_compras', 'spl_fecha_ultima_compra', 'cf_994', 'phone', 'mobile'];
+export const COMPRADOR_SELECT_MINIMO = ['id', 'spl_num_compras', 'spl_fecha_ultima_compra', 'cf_994'];
 
 /** Normaliza una orden cruda de vTiger al contrato interno. */
 export function normalizarOrden(o = {}) {
@@ -115,7 +115,8 @@ export async function detectarComprasNuevas({
   lote = 25,
   cursor = { procesadas: {} },
   buscarContactoGhl = null,
-  ahora = new Date()
+  ahora = new Date(),
+  estadoCompra = 'VENDIDO'
 } = {}) {
   if (!clienteVtiger || typeof clienteVtiger.consultar !== 'function') {
     throw new TypeError('detectarComprasNuevas requiere un clienteVtiger con .consultar(sql).');
@@ -124,7 +125,14 @@ export async function detectarComprasNuevas({
   const sedeLimpia = String(sede).toUpperCase();
   const fechaCorte = new Date(ahora.getTime() - dias * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-  const base = `FROM Contacts WHERE cf_3451 = '${escaparValor(sedeLimpia)}' AND spl_num_compras > 0 AND spl_fecha_ultima_compra >= '${fechaCorte}'`;
+  // `cf_994` es la marca que deja el personal cuando la compra queda EFECTUADA
+  // (valor real verificado en la instancia: "VENDIDO"). Si se pasa vacio, no se
+  // filtra por estado (util para diagnosticos).
+  const filtroEstado = String(estadoCompra || '').trim()
+    ? ` AND cf_994 = '${escaparValor(String(estadoCompra).trim())}'`
+    : '';
+
+  const base = `FROM Contacts WHERE cf_3451 = '${escaparValor(sedeLimpia)}' AND spl_num_compras > 0 AND spl_fecha_ultima_compra >= '${fechaCorte}'${filtroEstado}`;
   const conContacto = `SELECT ${COMPRADOR_SELECT.join(', ')} ${base} ORDER BY spl_fecha_ultima_compra DESC LIMIT ${lote}`;
   const sinContacto = `SELECT ${COMPRADOR_SELECT_MINIMO.join(', ')} ${base} ORDER BY spl_fecha_ultima_compra DESC LIMIT ${lote}`;
 
@@ -136,7 +144,7 @@ export async function detectarComprasNuevas({
     compradores = await clienteVtiger.consultar(sinContacto);
   }
 
-  const resultado = { sede: sedeLimpia, fechaCorte, revisados: compradores.length, candidatos: [], omitidos: [], errores: [] };
+  const resultado = { sede: sedeLimpia, fechaCorte, estadoCompra: String(estadoCompra || '').trim() || null, revisados: compradores.length, candidatos: [], omitidos: [], errores: [] };
 
   for (const c of compradores) {
     const vTigerId = String(c.id || '').trim();

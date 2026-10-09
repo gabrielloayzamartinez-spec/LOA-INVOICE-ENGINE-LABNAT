@@ -1,6 +1,6 @@
 # 🧾 LOA Invoice Engine
 
-**Motor independiente de facturas en PDF.** Detecta las **compras nuevas** en vTiger CRM, descarga el **PDF oficial de la factura**, lo publica en la **Media Library de la Cuenta Empresa de GoHighLevel** y deja el contacto marcado para que un **workflow de GHL** lo envíe por **WhatsApp/SMS** al cliente que cerró su compra.
+**Motor independiente de facturas en PDF.** Detecta las **compras efectuadas** en vTiger CRM (contacto en estado `VENDIDO`), **genera el PDF del invoice**, lo publica en la **Media Library de la Cuenta Empresa de GoHighLevel** y deja el contacto marcado para que un **workflow de GHL** lo envíe por **SMS** al cliente que cerró su compra.
 
 > Este repositorio es **autónomo**: no importa nada de LOA Engine, no usa librerías de terceros (cero dependencias) y se ejecuta por sí solo.
 
@@ -10,12 +10,12 @@
 
 ```mermaid
 flowchart LR
-    V[("vTiger\nSalesOrder")] -->|"webservice (solo lectura)"| D[Detector de compras nuevas]
-    D -->|"PDF oficial"| P[Sesión web vTiger\naction=ExportPDF]
+    V[("vTiger\ncompra registrada\ncontacto = VENDIDO")] -->|"webservice (solo lectura)"| D[Detector de compras efectuadas]
+    D -->|"datos de la orden"| P[Generador del invoice\nplantilla propia]
     P --> U[Media Library GHL\n→ URL pública]
     U --> M["Contacto GHL:\ncampo URL Factura PDF\n+ tag FACTURA_LISTA"]
     M --> G{GHL Workflow}
-    G --> C[WhatsApp/SMS al cliente\ncon el enlace]
+    G --> C[SMS al cliente\ncon el enlace]
 ```
 
 **Contrato publicado en GHL** (el workflow se arma contra esto):
@@ -48,8 +48,8 @@ flowchart LR
 cp .env.example .env      # completar credenciales (ver abajo)
 node src/cli.js check     # valida config y accesos SIN publicar nada
 
-# 2. Diagnóstico del PDF (no publica)
-node src/cli.js test-pdf --record=6x35385
+# 2. Muestra del invoice con datos reales (no publica nada)
+node src/cli.js preview --record=6x35385
 
 # 3. Prueba controlada de UNA factura
 node src/cli.js publish --contact=CONTACT_ID_GHL --order=6x35385
@@ -75,20 +75,24 @@ node src/cli.js scan      # ciclo continuo cada N minutos
 
 ---
 
-## 🤖 Workflow en GHL (Cuenta Empresa)
+## 🤖 Workflow en GHL (Cuenta Empresa) — envío por SMS
+
+**Disparador del flujo completo:** el personal registra la compra en vTiger y el contacto queda con estado **`VENDIDO`** (`cf_994`). El motor lo detecta en el siguiente ciclo (2-5 min), genera el invoice, lo publica y marca el contacto con el tag `FACTURA_LISTA`. **No hay que cambiar nada en el trabajo del personal**: ellos siguen usando vTiger como siempre.
+
+Armado del workflow (5 minutos):
 
 1. **Campos personalizados** (Settings → Custom Fields → Contact): crear `URL Factura PDF` y `Factura Nº Orden` (texto). Los nombres deben ser **exactos**: el motor los resuelve por nombre.
 2. **Workflow nuevo** → Trigger: *Contact Tag* → **Tag Added** → `FACTURA_LISTA`.
 3. **Filtro**: `URL Factura PDF` *is not empty*.
-4. **Acción** — *Send SMS* (o WhatsApp con plantilla aprobada):
-   > Hola {{contact.first_name}}, tu compra quedó registrada. Aquí puedes ver y descargar tu factura:
+4. **Acción** — *Send SMS*:
+   > {{contact.first_name}}, tu compra quedó registrada. Aquí puedes ver y descargar tu factura:
    > {{contact.url_factura_pdf}}
    > Cualquier duda, respóndenos por aquí. — Laboratorios Naturales
 5. **Acción secundaria**: añadir tag `FACTURA_ENVIADA` y quitar `FACTURA_LISTA`.
-6. **Ventana horaria**: L-V 07:00-22:00 / S-D 10:00-16:00.
+6. **Ventana de envío**: L-V 07:00-22:00 / S-D 10:00-16:00.
 7. **Reintento**: si el envío falla, esperar 1 h y reintentar una sola vez.
 
-> ⚠️ **WhatsApp y Meta**: fuera de la ventana de 24 h desde el último mensaje del cliente, WhatsApp exige **plantilla aprobada** (con variable para la URL). El **SMS no tiene esa restricción**: si la prioridad es que salga siempre, el SMS es el canal determinista.
+> ✅ **Por qué SMS es el camino simple:** el SMS solo lleva un **enlace** (no un archivo adjunto), así que no depende de plantillas aprobadas por Meta ni de ventanas de 24 h: sale siempre, a la hora que sea. El PDF vive en la Media Library de GHL y el enlace es la URL pública.
 >
 > ⚠️ **Discreción**: el mensaje no debe nombrar el tratamiento ni el producto (artritis, próstata, etc.). Solo factura + enlace.
 
@@ -97,7 +101,8 @@ node src/cli.js scan      # ciclo continuo cada N minutos
 ## 🧪 Pruebas
 
 ```bash
-npm test                    # 10 suites (338 asserts)
+npm test                    # 11 suites (390 asserts)
+npm run test:render         # generador del invoice (modelo + PDF)
 npm run test:bridge         # contrato + idempotencia
 npm run test:websession     # sesión web vTiger (CSRF, cookies, ExportPDF)
 npm run test:media          # subida a la Media Library y modos de fallo
@@ -118,8 +123,9 @@ npm run test:e2e            # integración por HTTP real: servidores vTiger y GH
 | Toda la lógica de idempotencia y el contrato de campos/tags | ✅ Formulario de login de vTiger (v7, CSRF `__vtrftk`, **sin captcha**) |
 | Sesión web: CSRF, cookies, caché, *single-flight*, renovación | ✅ `ORDER BY spl_fecha_ultima_compra DESC` y filtro por fecha en vTiger |
 | Subida multipart y **todos** los modos de fallo (401/403/5xx/red) | ✅ Contactos y `SalesOrder` legibles (campo `total` **denegado**: se usa `hdnGrandTotal`) |
-| Flujo completo `vTiger → PDF → GHL → tags` | ⏳ Descarga real del PDF oficial (requiere credenciales web) |
-| Detección de compras, cursor y reintentos | ⏳ Publicación real en la Media Library (requiere PIT válido) |
+| Flujo completo `vTiger → PDF → GHL → tags` | ✅ Generación del invoice con **datos reales** de vTiger (`S-96567`, MIGUEL REVILLA, 160,00 USD) |
+| Detección de compras, cursor y reintentos | ✅ Disparador real: `cf_994 = "VENDIDO"` y nº de orden `S-XXXXX` de `salesorder_no` |
+| — | ⏳ Publicación real en la Media Library (requiere el PIT de la Cuenta Empresa) |
 
 ---
 

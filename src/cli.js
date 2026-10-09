@@ -225,6 +225,7 @@ async function unCiclo({ cursor, rutaCursor }) {
     sede: cfg.escaneo.sede,
     dias: cfg.escaneo.dias,
     lote: cfg.escaneo.lote,
+    estadoCompra: cfg.escaneo.estadoCompra,
     buscarContactoGhl: (tel) => buscarContactoGhl(tel)
   });
 
