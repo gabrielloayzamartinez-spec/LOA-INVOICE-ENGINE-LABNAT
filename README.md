@@ -97,13 +97,15 @@ node src/cli.js scan      # ciclo continuo cada N minutos
 ## 🧪 Pruebas
 
 ```bash
-npm test                    # 7 suites (261 asserts)
+npm test                    # 9 suites (306 asserts)
 npm run test:bridge         # contrato + idempotencia
 npm run test:websession     # sesión web vTiger (CSRF, cookies, ExportPDF)
 npm run test:media          # subida a la Media Library y modos de fallo
 npm run test:delivery       # caso de uso completo
 npm run test:publisher      # integración vTiger + GHL (red simulada)
 npm run test:detector       # detección de compras + cursor
+npm run test:index          # API pública (todos los exports y candados)
+npm run test:cli            # CLI real, en seco (sin credenciales)
 ```
 
 ### Qué está verificado y qué no
@@ -145,7 +147,7 @@ src/
 │   └── ghl_client.js             HTTP con timeout y reintentos (429/red)
 └── jobs/
     └── detectar_compras_nuevas.js  Detección + cursor + ciclo
-tests/                            7 suites, 261 asserts
+tests/                            9 suites, 306 asserts
 ```
 
 ---
