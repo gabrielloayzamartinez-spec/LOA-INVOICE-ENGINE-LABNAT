@@ -55,7 +55,7 @@ function clienteVtiger() {
 async function buscarContactoGhl(telefono, { fetchImpl = null } = {}) {
   if (!telefono) return null;
   const headers = headersCentral(cfg.ghl.apiKeyCentral);
-  const url = `https://services.leadconnectorhq.com/contacts/lookup?locationId=${encodeURIComponent(cfg.ghl.locationIdCentral)}&phone=${encodeURIComponent(telefono)}`;
+  const url = `${cfg.ghl.baseUrl}/contacts/lookup?locationId=${encodeURIComponent(cfg.ghl.locationIdCentral)}&phone=${encodeURIComponent(telefono)}`;
   const enviar = fetchImpl || ((u, o) => ghlFetch(u, o, 1, 'InvoiceLookup'));
 
   try {

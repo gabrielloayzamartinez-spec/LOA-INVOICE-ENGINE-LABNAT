@@ -14,9 +14,14 @@
  */
 
 import { ghlFetch } from './ghl_client.js';
+import { configFactura } from '../config.js';
 
-const BASE_GHL = 'https://services.leadconnectorhq.com';
 export const GHL_API_VERSION = '2021-07-28';
+
+/** Base de GHL (configurable: permite proxy o servidor de pruebas HTTP real). */
+export function baseGhl() {
+  return configFactura().ghl.baseUrl;
+}
 
 /** Motivos de resultado (observabilidad / auditoria). */
 export const MOTIVOS_MEDIA = {
@@ -79,7 +84,7 @@ export async function subirPdfAMediaLibrary({ locationId, nombreArchivo, conteni
   }
 
   const enviar = fetchImpl || ((url, opciones) => ghlFetch(url, opciones, 1, caller));
-  const url = `${BASE_GHL}/medias/upload-file?locationId=${encodeURIComponent(locationId)}`;
+  const url = `${baseGhl()}/medias/upload-file?locationId=${encodeURIComponent(locationId)}`;
 
   let res;
   try {
@@ -114,7 +119,7 @@ export async function verificarAccesoMedia({ locationId, apiKey, fetchImpl = nul
   if (!locationId || !apiKey) return { ok: false, motivo: MOTIVOS_MEDIA.PARAMS, status: 0, detalle: 'Faltan locationId o apiKey.' };
 
   const enviar = fetchImpl || ((url, opciones) => ghlFetch(url, opciones, 1, caller));
-  const url = `${BASE_GHL}/medias/files?locationId=${encodeURIComponent(locationId)}&limit=1`;
+  const url = `${baseGhl()}/medias/files?locationId=${encodeURIComponent(locationId)}&limit=1`;
 
   try {
     const res = await enviar(url, { method: 'GET', headers: headersMedia(apiKey) });

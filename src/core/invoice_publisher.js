@@ -17,11 +17,9 @@
 import { configFactura } from '../config.js';
 import { ghlFetch } from '../connectors/ghl_client.js';
 import { crearClienteSesionWeb } from '../connectors/vtiger_web_session.js';
-import { subirPdfAMediaLibrary } from '../connectors/ghl_media.js';
+import { subirPdfAMediaLibrary, baseGhl } from '../connectors/ghl_media.js';
 import { entregarFacturaDeOrden } from './invoice_delivery.js';
 import { CLAVES_PUENTE_FACTURA } from './invoice_bridge.js';
-
-const BASE_GHL = 'https://services.leadconnectorhq.com';
 
 /** Nombres EXACTOS de los campos puente en GHL. */
 export const NOMBRES_CAMPOS_FACTURA = {
@@ -63,7 +61,7 @@ function enviarCon(fetchImpl, caller) {
  */
 export async function resolverCamposPuente(locationId, { headers, fetchImpl = null, caller = 'InvoicePublisher' } = {}) {
   const enviar = enviarCon(fetchImpl, caller);
-  const res = await enviar(`${BASE_GHL}/locations/${encodeURIComponent(locationId)}/customFields`, { method: 'GET', headers });
+  const res = await enviar(`${baseGhl()}/locations/${encodeURIComponent(locationId)}/customFields`, { method: 'GET', headers });
   const texto = await (res.text ? res.text().catch(() => '') : Promise.resolve(''));
   if (!res.ok) throw new Error(`No se pudieron leer los campos personalizados (HTTP ${res.status}): ${String(texto).slice(0, 160)}`);
 
@@ -87,7 +85,7 @@ export async function resolverCamposPuente(locationId, { headers, fetchImpl = nu
 export async function leerContactoGhl(contactId, { headers, fetchImpl = null, caller = 'InvoicePublisher' } = {}) {
   const enviar = enviarCon(fetchImpl, caller);
   try {
-    const res = await enviar(`${BASE_GHL}/contacts/${encodeURIComponent(contactId)}`, { method: 'GET', headers });
+    const res = await enviar(`${baseGhl()}/contacts/${encodeURIComponent(contactId)}`, { method: 'GET', headers });
     const texto = await (res.text ? res.text().catch(() => '') : Promise.resolve(''));
     if (!res.ok) return { ok: false, status: res.status, contacto: null, detalle: String(texto).slice(0, 180) };
     let cuerpo = null;
@@ -105,7 +103,7 @@ export async function escribirCamposPuente(contactId, customFields, { headers, f
   }
   const enviar = enviarCon(fetchImpl, caller);
   try {
-    const res = await enviar(`${BASE_GHL}/contacts/${encodeURIComponent(contactId)}`, {
+    const res = await enviar(`${baseGhl()}/contacts/${encodeURIComponent(contactId)}`, {
       method: 'PUT',
       headers,
       body: JSON.stringify({ customFields })
@@ -122,7 +120,7 @@ export async function agregarTagsContacto(contactId, tags, { headers, fetchImpl 
   if (!contactId || !Array.isArray(tags) || !tags.length) return { ok: false, skipped: true, detalle: 'sin tags' };
   const enviar = enviarCon(fetchImpl, caller);
   try {
-    const res = await enviar(`${BASE_GHL}/contacts/${encodeURIComponent(contactId)}/tags`, {
+    const res = await enviar(`${baseGhl()}/contacts/${encodeURIComponent(contactId)}/tags`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ tags })

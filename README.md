@@ -97,7 +97,7 @@ node src/cli.js scan      # ciclo continuo cada N minutos
 ## 🧪 Pruebas
 
 ```bash
-npm test                    # 9 suites (306 asserts)
+npm test                    # 10 suites (338 asserts)
 npm run test:bridge         # contrato + idempotencia
 npm run test:websession     # sesión web vTiger (CSRF, cookies, ExportPDF)
 npm run test:media          # subida a la Media Library y modos de fallo
@@ -106,7 +106,10 @@ npm run test:publisher      # integración vTiger + GHL (red simulada)
 npm run test:detector       # detección de compras + cursor
 npm run test:index          # API pública (todos los exports y candados)
 npm run test:cli            # CLI real, en seco (sin credenciales)
+npm run test:e2e            # integración por HTTP real: servidores vTiger y GHL en localhost
 ```
+
+> **`test:e2e`** levanta dos servidores HTTP locales que hablan el protocolo real (login web con cookies y 302, `ExportPDF`, subida multipart, contactos y tags) y ejecuta el flujo completo **y el CLI** contra ellos. Verifica lo que un doble de `fetch` no puede: el multipart que viaja por la red, las cookies de sesión y las cabeceras de autenticación.
 
 ### Qué está verificado y qué no
 
@@ -147,7 +150,7 @@ src/
 │   └── ghl_client.js             HTTP con timeout y reintentos (429/red)
 └── jobs/
     └── detectar_compras_nuevas.js  Detección + cursor + ciclo
-tests/                            9 suites, 306 asserts
+tests/                            10 suites, 338 asserts
 ```
 
 ---

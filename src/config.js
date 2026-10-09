@@ -71,6 +71,9 @@ export function configFactura() {
       webSessionTtlMs: Math.min(Math.max(envInt('VTIGER_WEB_SESSION_TTL_MS', 20 * 60 * 1000), 60 * 1000), 4 * 60 * 60 * 1000)
     },
     ghl: {
+      // Base configurable: permite apuntar a un proxy o a un servidor de pruebas
+      // HTTP real (test de integracion end-to-end).
+      baseUrl: String(env('GHL_BASE_URL', 'https://services.leadconnectorhq.com')).replace(/\/+$/, ''),
       apiKeyCentral: env('GHL_API_KEY_CENTRAL', ''),
       locationIdCentral: env('GHL_LOCATION_ID_CENTRAL', ''),
       timeoutMs: Math.min(Math.max(envInt('GHL_HTTP_TIMEOUT_MS', 30000), 5000), 120000),
