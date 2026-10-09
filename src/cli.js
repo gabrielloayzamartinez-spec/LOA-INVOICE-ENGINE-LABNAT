@@ -30,6 +30,8 @@ import { ghlFetch } from './connectors/ghl_client.js';
 import { publicarFacturaDeContacto, headersCentral } from './core/invoice_publisher.js';
 import { generarFacturaPdf, construirModeloInvoice, nombreArchivoInvoice, EMPRESA_POR_DEFECTO } from './core/invoice_render.js';
 import { cargarCursor, guardarCursor, podarCursor, ejecutarCiclo, normalizarOrden, ORDEN_SELECT } from './jobs/detectar_compras_nuevas.js';
+import { atenderEventoCompra } from './jobs/atender_evento.js';
+import { iniciarServidorEventos } from './webhook_server.js';
 
 cargarEnv();
 const cfg = configFactura();
@@ -210,7 +212,38 @@ async function comandoPublish() {
 }
 
 // ------------------------------------------------------------------------------
-// COMANDOS: once / scan
+// COMANDO: serve  (DISPARADOR UNICO por evento — modo recomendado)
+// ------------------------------------------------------------------------------
+async function comandoServe() {
+  const { port } = args();
+  titulo('SERVE - Endpoint de eventos (disparador unico, SIN barrido)');
+
+  const validacion = validarConfig(cfg, { webservice: true, sesionWeb: false, ghl: true, webhook: true });
+  if (!validacion.ok) return linea(`[STOP] Faltan variables: ${validacion.faltantes.join(', ')}`);
+  if (!cfg.habilitado) return linea('[STOP] INVOICE_PDF_ENABLED=false: el endpoint responderia DESACTIVADO. Activarlo para publicar.');
+
+  const vt = clienteVtiger();
+  const atender = (payload) => atenderEventoCompra({
+    payload,
+    clienteVtiger: vt,
+    sede: cfg.escaneo.sede,
+    buscarContactoGhl: (tel) => buscarContactoGhl(tel)
+  });
+
+  const puerto = port ? Number(port) : cfg.webhook.puerto;
+  const { url } = await iniciarServidorEventos({ puerto, atender, token: cfg.webhook.token });
+
+  linea('');
+  linea(`  Escuchando en : ${url}`);
+  linea(`  Salud         : GET  ${url}/salud`);
+  linea(`  Evento (POST) : ${url}/evento/compra   (header: x-loa-token)`);
+  linea('');
+  linea('  Este endpoint NO barre la base: recibe UNA venta y publica ESA factura.');
+  linea('  Ctrl+C para detener.');
+}
+
+// ------------------------------------------------------------------------------
+// COMANDOS: once / scan  (MODO RECUPERACION — barrido)
 // ------------------------------------------------------------------------------
 async function unCiclo({ cursor, rutaCursor }) {
   const vt = clienteVtiger();
@@ -243,7 +276,7 @@ async function unCiclo({ cursor, rutaCursor }) {
 }
 
 async function comandoOnce() {
-  titulo('ONCE - Un ciclo de deteccion + publicacion');
+  titulo('ONCE - Recuperacion manual: un barrido de compras (el flujo normal es por evento)');
   const validacion = validarConfig(cfg, { webservice: true, sesionWeb: true, ghl: true });
   if (!validacion.ok) return linea(`[STOP] Faltan variables: ${validacion.faltantes.join(', ')}`);
   if (!cfg.habilitado) return linea('[STOP] El interruptor esta APAGADO. Poner INVOICE_PDF_ENABLED=true para publicar.');
@@ -253,7 +286,7 @@ async function comandoOnce() {
 }
 
 async function comandoScan() {
-  titulo(`SCAN - Ciclo continuo cada ${cfg.escaneo.intervaloMinutos} minuto(s)`);
+  titulo(`SCAN - Recuperacion continua cada ${cfg.escaneo.intervaloMinutos} minuto(s) (el flujo normal es por evento)`);
   const validacion = validarConfig(cfg, { webservice: true, sesionWeb: true, ghl: true });
   if (!validacion.ok) return linea(`[STOP] Faltan variables: ${validacion.faltantes.join(', ')}`);
   if (!cfg.habilitado) return linea('[STOP] El interruptor esta APAGADO. Poner INVOICE_PDF_ENABLED=true para publicar.');
@@ -276,6 +309,7 @@ async function comandoScan() {
 // DESPACHO
 // ------------------------------------------------------------------------------
 const comandos = {
+  serve: comandoServe,
   check: comandoCheck,
   'test-pdf': comandoTestPdf,
   preview: comandoPreview,

@@ -32,18 +32,26 @@ const AQUI = path.dirname(fileURLToPath(import.meta.url));
 const CLI = path.resolve(AQUI, '..', 'src', 'cli.js');
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'loa-cli-'));
 
-function correr(args) {
+function correr(args, env = { ...process.env, INVOICE_PDF_ENABLED: '' }) {
   try {
     const out = execFileSync(process.execPath, [CLI, ...args], {
       cwd: TMP,               // sin .env: se prueba el camino fail-safe
       encoding: 'utf8',
       stdio: 'pipe',
-      env: { ...process.env, INVOICE_PDF_ENABLED: '' }
+      env
     });
     return { code: 0, salida: out };
   } catch (e) {
     return { code: typeof e.status === 'number' ? e.status : 1, salida: `${e.stdout || ''}${e.stderr || ''}` };
   }
+}
+
+/** Entorno minimo (sin ninguna variable del motor): garantiza "sin configuracion". */
+function envMinimo() {
+  const claves = ['PATH', 'SystemRoot', 'TEMP', 'TMP', 'APPDATA', 'USERPROFILE', 'COMSPEC', 'windir'];
+  const env = {};
+  for (const k of claves) if (process.env[k]) env[k] = process.env[k];
+  return env;
 }
 
 console.log('\n==========================================================');
@@ -86,6 +94,14 @@ console.log('\n[TEST 5] `test-pdf` sin --record: pide el registro');
 const r5 = correr(['test-pdf']);
 assert(r5.code === 0, `Termina con codigo 0 (recibido: ${r5.code})`);
 assert(/Falta --record/.test(r5.salida), 'Indica que falta el registro de la orden');
+
+// ------------------------------------------------------------------------------
+console.log('\n[TEST 6] `serve` sin configuracion: NO arranca el servidor');
+const r6 = correr(['serve'], envMinimo());
+assert(r6.code === 0, `Termina con codigo 0 (recibido: ${r6.code})`);
+assert(/\[STOP\]/.test(r6.salida), 'Se detiene avisando que falta configuracion');
+assert(/INVOICE_WEBHOOK_TOKEN|Faltan variables/.test(r6.salida), 'Indica que falta el token o las credenciales');
+assert(!/Escuchando en/.test(r6.salida), 'No llega a levantar el endpoint');
 
 // ------------------------------------------------------------------------------
 try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* limpieza best-effort */ }

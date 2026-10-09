@@ -90,6 +90,12 @@ export function configFactura() {
     },
     logs: {
       dir: env('INVOICE_LOG_DIR', 'data/logs')
+    },
+    webhook: {
+      // 'evento' = el CRM avisa (sin barrido). 'barrido' = recuperacion manual.
+      trigger: String(env('INVOICE_TRIGGER', 'evento')).toLowerCase(),
+      token: env('INVOICE_WEBHOOK_TOKEN', ''),
+      puerto: Math.min(Math.max(envInt('INVOICE_WEBHOOK_PORT', 3100), 1), 65535)
     }
   };
 }
@@ -101,7 +107,7 @@ export function configFactura() {
  */
 export function validarConfig(cfg = configFactura(), requiere = {}) {
   const faltantes = [];
-  const { webservice = true, sesionWeb = true, ghl = true } = requiere;
+  const { webservice = true, sesionWeb = true, ghl = true, webhook = false } = requiere;
 
   if (webservice) {
     if (!cfg.vtiger.url) faltantes.push('VTIGER_URL');
@@ -117,6 +123,7 @@ export function validarConfig(cfg = configFactura(), requiere = {}) {
     if (!cfg.ghl.apiKeyCentral) faltantes.push('GHL_API_KEY_CENTRAL');
     if (!cfg.ghl.locationIdCentral) faltantes.push('GHL_LOCATION_ID_CENTRAL');
   }
+  if (webhook && !cfg.webhook?.token) faltantes.push('INVOICE_WEBHOOK_TOKEN');
 
   return { ok: faltantes.length === 0, faltantes: [...new Set(faltantes)] };
 }

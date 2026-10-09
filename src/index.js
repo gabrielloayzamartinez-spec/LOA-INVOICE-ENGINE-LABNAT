@@ -35,8 +35,16 @@ export { crearClienteVtiger, assertSentenciaSoloLectura, assertOperacionPermitid
 export { subirPdfAMediaLibrary, verificarAccesoMedia, MOTIVOS_MEDIA } from './connectors/ghl_media.js';
 export { ghlFetch } from './connectors/ghl_client.js';
 
-// Deteccion de compras nuevas
+// Deteccion de compras nuevas (modo barrido / recuperacion)
 export {
   detectarComprasNuevas, cargarCursor, guardarCursor, claveCursor,
   normalizarOrden, ORDEN_SELECT
 } from './jobs/detectar_compras_nuevas.js';
+
+// DISPARADOR UNICO por evento (modo recomendado, sin barrido)
+export {
+  atenderEventoCompra, normalizarEventoCompra, MOTIVOS_EVENTO, ORDEN_SELECT_EVENTO
+} from './jobs/atender_evento.js';
+export {
+  crearServidorEventos, iniciarServidorEventos, codigoHttpParaResultado
+} from './webhook_server.js';

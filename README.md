@@ -55,8 +55,9 @@ node src/cli.js preview --record=6x35385
 node src/cli.js publish --contact=CONTACT_ID_GHL --order=6x35385
 
 # 4. Operación
-node src/cli.js once      # un ciclo
-node src/cli.js scan      # ciclo continuo cada N minutos
+node src/cli.js serve     # DISPARADOR POR EVENTO (recomendado, sin barrido)
+node src/cli.js once      # recuperación manual: un barrido
+node src/cli.js scan      # recuperación continua
 ```
 
 ### Variables de entorno
@@ -72,6 +73,45 @@ node src/cli.js scan      # ciclo continuo cada N minutos
 **Scopes necesarios en el PIT de la Cuenta Empresa:** `medias.read`, `medias.write`, `contacts.readonly`, `contacts.write`, `locations.readonly`, `customFields.readonly`.
 
 > Si `check` reporta `TOKEN_INVALIDO` (401) el PIT está revocado; si reporta `SCOPE_FALTANTE` (403), falta habilitar `medias.write`.
+
+---
+
+## ⚡ Disparador: un evento por venta (recomendado — sin barrido)
+
+El motor **no recorre la base**: espera que le avisen. **Un evento = una venta = una factura**, en segundos.
+
+```bash
+npm run serve        # levanta el endpoint de eventos (INVOICE_TRIGGER=evento)
+```
+
+| Ruta | Uso |
+|---|---|
+| `GET /salud` | Verificación de vida (para el CRM o el monitor) |
+| `POST /evento/compra` | Evento de venta efectuada (requiere el header `x-loa-token`) |
+
+**Vía A — Webhook de vTiger** (si tu instancia tiene la acción *Webhook* en Workflow):
+1. CRM Settings → Automation → **Workflow** → nuevo.
+2. Condición: `Contacts` → *Estado de Venta* (`cf_994`) **es** `VENDIDO`.
+3. Acción **Webhook** → `POST https://<tu-motor>/evento/compra`, con header `x-loa-token: <token>` y body JSON:
+   ```json
+   { "salesorder_id": "<id de la orden>", "contact_id": "<id del contacto>" }
+   ```
+
+**Vía B — Enganche al sync existente** (sin tocar vTiger): el motor LOA que ya sincroniza por `last_modified_time` llama a `atenderEventoCompra(payload)` cuando detecta el cambio a `VENDIDO`. Mismo código, sin HTTP.
+
+**Prueba en 10 segundos:**
+```bash
+curl -X POST http://127.0.0.1:3100/evento/compra \
+  -H "content-type: application/json" \
+  -H "x-loa-token: $INVOICE_WEBHOOK_TOKEN" \
+  -d '{"salesorder_id":"6x35385"}'
+```
+
+**Respuestas pensadas para el CRM:** `200` publicada **o** ya publicada (idempotente, no reintentar) · `422` faltan datos (orden/contacto aún no disponibles) · `503` fallo temporal de GHL → **reintentar** · `401` token inválido · `404` ruta desconocida.
+
+> El barrido (`once` / `scan`) queda como **modo recuperación** para casos puntuales (por ejemplo, si el motor estuvo caído). El flujo normal es el evento.
+>
+> ⚠️ El endpoint debe estar **siempre disponible** (Render/Railway como servicio web, no como cron). Si el motor está caído cuando llega el evento, ese evento se pierde: para eso está el modo recuperación.
 
 ---
 
@@ -101,7 +141,8 @@ Armado del workflow (5 minutos):
 ## 🧪 Pruebas
 
 ```bash
-npm test                    # 11 suites (390 asserts)
+npm test                    # 12 suites (430 asserts)
+npm run test:evento         # disparador por evento + servidor de webhooks
 npm run test:render         # generador del invoice (modelo + PDF)
 npm run test:bridge         # contrato + idempotencia
 npm run test:websession     # sesión web vTiger (CSRF, cookies, ExportPDF)
