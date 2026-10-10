@@ -71,9 +71,12 @@ function crearEntorno({ contactoInicial = { id: CONTACT_ID, customFields: [], ta
       if (/module=Home&action=index/.test(u)) return resp(HTML_INTERNO, { tipo: 'text/html' });
       if (/view=Detail/.test(u)) return resp('<html><a href="index.php?module=SalesOrder&action=ExportPDF&record=6x35385&folderid=7">PDF</a></html>', { tipo: 'text/html' });
       if (/action=ExportPDF/.test(u)) {
-        return /folderid=7/.test(u)
+        // vTiger devuelve el PDF OFICIAL con la URL que usa la interfaz
+        // (action=ExportPDF&record=X&app=...). El parametro `app` es obligatorio:
+        // sin el, vTiger devuelve HTML en lugar del PDF.
+        return /app=MARKETING|folderid=7/.test(u)
           ? resp(new Uint8Array(PDF), { tipo: 'application/pdf' })
-          : resp('<html>sin plantilla</html>', { tipo: 'text/html' });
+          : resp('<html>sin app: la UI devuelve HTML</html>', { tipo: 'text/html' });
       }
       if (metodo === 'POST') return resp('', { status: 302, setCookies: ['PHPSESSID=sess1; path=/'] });
       return resp('<html>?</html>', { status: 404, tipo: 'text/html' });
@@ -138,8 +141,9 @@ const r1 = await publicarFacturaDeContacto({
 assert(r1.publicado === true, `El flujo completo termina publicado (motivo: ${r1.motivo})`);
 if (!r1.publicado) console.log(`    [DIAG] motivo=${r1.motivo} detalle=${r1.detalle} llamadas=${env1.llamadas.map(l => l.metodo + ' ' + l.url).join(' | ')}`);
 assert(r1.url === 'https://cdn.ghl.test/factura_G-04212158.pdf', 'Se publica la URL devuelta por la Media Library');
-assert(env1.cuenta('module=Users&action=Login') === 0, 'NO se loguea en vTiger: el invoice se genera localmente (Via B)');
-assert(env1.cuenta('action=ExportPDF') === 0, 'NO se descarga ningun PDF de vTiger');
+assert(env1.cuenta('module=Users&action=Login') === 1, 'Se loguea UNA vez en vTiger (la sesion web se reutiliza)');
+assert(env1.cuenta('action=ExportPDF') === 1, 'Se descarga el PDF OFICIAL una vez (Opcion A)');
+assert(env1.llamadas.some(l => /action=ExportPDF/.test(l.url) && /app=MARKETING/.test(l.url)), 'Usa la URL exacta de la UI (con app=MARKETING, sin la cual vTiger devuelve HTML)');
 assert(env1.cuenta('/medias/upload-file', 'POST') === 1, 'Se sube el PDF una vez a la Media Library');
 assert(env1.cuenta(`/contacts/${CONTACT_ID}`, 'PUT') === 1, 'Se marcan los campos en el contacto');
 assert(env1.cuenta(`/contacts/${CONTACT_ID}/tags`, 'POST') === 1, 'Se agrega el tag que dispara el workflow');
@@ -152,10 +156,10 @@ const tagsEscritos = JSON.parse(String(env1.llamadas.find(l => l.url.includes('/
 assert(tagsEscritos.includes(TAG_FACTURA_LISTA), `El tag enviado es ${TAG_FACTURA_LISTA}`);
 
 // ------------------------------------------------------------------------------
-console.log('\n[TEST 3] El PDF que llega a GHL es el invoice GENERADO por el motor');
+console.log('\n[TEST 3] A GHL le llega el PDF OFICIAL de vTiger (no una generacion propia)');
 const subida = env1.llamadas.find(l => l.url.includes('/medias/upload-file'));
 const archivo = subida.body.get('file');
-assert(archivo.size > 1000, `El archivo subido es un PDF con contenido real (${archivo.size} bytes)`);
+assert(archivo.size === PDF.length, `Se sube el PDF oficial TAL CUAL lo entrega vTiger (${archivo.size} bytes)`);
 assert(archivo.name === 'factura_G-04212158.pdf', 'El archivo subido tiene nombre legible');
 assert(subida.body.get('name') === 'factura_G-04212158.pdf', 'El multipart incluye el campo name');
 

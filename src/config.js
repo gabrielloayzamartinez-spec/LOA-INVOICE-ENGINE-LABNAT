@@ -91,6 +91,17 @@ export function configFactura() {
     logs: {
       dir: env('INVOICE_LOG_DIR', 'data/logs')
     },
+    pdf: {
+      // ORIGEN DEL PDF:
+      //   'vtiger' = PDF OFICIAL de vTiger (accion ExportPDF) -> trae logo, la tabla
+      //              completa de productos y los totales ya aprobados por el negocio.
+      //   'propio' = generado por el motor con la plantilla propia (respaldo).
+      fuente: String(env('INVOICE_PDF_SOURCE', 'vtiger')).toLowerCase(),
+      // Parametro `app` que exige la accion ExportPDF (verificado contra la UI real).
+      app: env('VTIGER_WEB_APP', 'MARKETING'),
+      // Si el PDF oficial falla, generar localmente en lugar de no publicar nada.
+      fallbackPropio: envBool('INVOICE_PDF_FALLBACK_PROPIO', true)
+    },
     webhook: {
       // 'evento' = el CRM avisa (sin barrido). 'barrido' = recuperacion manual.
       trigger: String(env('INVOICE_TRIGGER', 'evento')).toLowerCase(),

@@ -80,6 +80,8 @@ function crearVtigerFalso({ pdfTrasLoginCaido = false } = {}) {
         exportTrasCaida++;
         return respuesta(HTML_LOGIN); // sesion expirada a mitad de camino
       }
+      // El PDF OFICIAL sale cuando la URL lleva `app` (como la usa la interfaz).
+      if (/app=MARKETING/.test(url)) { pdfConFolder++; return respuesta(new Uint8Array(PDF_MINIMO), { tipo: 'application/pdf' }); }
       if (/folderid=7/.test(url)) { pdfConFolder++; return respuesta(new Uint8Array(PDF_MINIMO), { tipo: 'application/pdf' }); }
       pdfSinFolder++;
       return respuesta('<html>No PDF template</html>');
@@ -213,6 +215,29 @@ let errorLogin = null;
 try { await cliente4.asegurarSesion(); } catch (e) { errorLogin = e; }
 assert(errorLogin?.code === 'WEB_LOGIN_REJECTED', `Credenciales rechazadas -> WEB_LOGIN_REJECTED (recibido: ${errorLogin?.code})`);
 assert(cliente4.sesionVigente() === false, 'No se marca la sesion como vigente tras un login rechazado');
+
+// ------------------------------------------------------------------------------
+console.log('\n[TEST 11] DESCARGA DEL DOCUMENTO OFICIAL (Opcion A: el PDF de vTiger)');
+const falsoDoc = crearVtigerFalso();
+const clienteDoc = crearClienteSesionWeb({ baseUrl: BASE, username: 'u', password: 'p', fetchImpl: falsoDoc.fetchImpl });
+const rDoc = await clienteDoc.descargarDocumentoOficial({ record: '6x35385', modulo: 'SalesOrder', app: 'MARKETING' });
+assert(rDoc.ok === true && esPdf(rDoc.buf) === true, 'Descarga el PDF oficial del documento');
+assert(rDoc.bytes === PDF_MINIMO.length, 'Devuelve los bytes del PDF oficial');
+const urlDoc = falsoDoc.llamadas.find(l => /action=ExportPDF/.test(l.url))?.url || '';
+assert(/action=ExportPDF/.test(urlDoc) && /record=6x35385/.test(urlDoc), 'Pide la accion ExportPDF del registro');
+assert(/app=MARKETING/.test(urlDoc), 'Incluye el parametro `app` (sin el, vTiger devuelve HTML en lugar del PDF)');
+assert(!/folderid=/.test(urlDoc), 'No inventa un folderid: usa la URL exacta de la interfaz');
+
+const falsoDocMalo = crearVtigerFalso();
+const fetchSinPdf = async (url, init = {}) => {
+  if (/action=ExportPDF/.test(url)) return respuesta('<html>vista en HTML, no PDF</html>');
+  return falsoDocMalo.fetchImpl(url, init);
+};
+const clienteDocMalo = crearClienteSesionWeb({ baseUrl: BASE, username: 'u', password: 'p', fetchImpl: fetchSinPdf });
+const rDocMalo = await clienteDocMalo.descargarDocumentoOficial({ record: '6x1' });
+assert(rDocMalo.ok === false && rDocMalo.motivo === 'EXPORT_PDF_NO_DEVOLVIO_PDF', 'Si vTiger no devuelve un PDF, lo reporta (no publica HTML como si fuera factura)');
+const rSinRecord = await clienteDoc.descargarDocumentoOficial({ record: '' });
+assert(rSinRecord.ok === false && rSinRecord.motivo === 'SIN_RECORD', 'Sin registro no llama a la red');
 
 // ------------------------------------------------------------------------------
 console.log('\n==========================================================');

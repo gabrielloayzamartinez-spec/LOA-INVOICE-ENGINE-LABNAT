@@ -192,6 +192,10 @@ INVOICE_PDF_ENABLED=false          ← encender SOLO tras la prueba validada
 VTIGER_URL=https://ventascallcenter.com
 VTIGER_USERNAME=…
 VTIGER_ACCESS_KEY=…
+VTIGER_WEB_USERNAME=…              ← OBLIGATORIA: es la que descarga el PDF OFICIAL
+VTIGER_WEB_PASSWORD=…              ← OBLIGATORIA (login web de vTiger)
+INVOICE_PDF_SOURCE=vtiger          ← PDF oficial de vTiger (recomendado)
+VTIGER_WEB_APP=MARKETING           ← parametro exigido por ExportPDF (sin el, devuelve HTML)
 GHL_API_KEY_CENTRAL=…              ← el PIT de la Cuenta Empresa
 GHL_LOCATION_ID_CENTRAL=…
 GHL_BASE_URL=https://services.leadconnectorhq.com
@@ -202,6 +206,8 @@ INVOICE_ESTADO_COMPRA=VENDIDO
 INVOICE_CURSOR_PATH=/var/data/cursor.json    ← con disco persistente
 INVOICE_LOG_DIR=/var/data/logs
 ```
+
+> ⚠️ **Con `INVOICE_PDF_SOURCE=vtiger` (por defecto) las credenciales web son obligatorias**: el PDF es el que genera el botón "Exportar a PDF" de vTiger, y para eso hace falta usuario y contraseña web (el `access key` de la API no sirve). Si querés que el motor genere el PDF por su cuenta, poné `INVOICE_PDF_SOURCE=propio` y las web dejan de ser necesarias.
 
 > `PORT` lo inyecta Render automáticamente y el motor lo respeta (verificado: con `PORT=10000` escucha en 10000; en local cae a `INVOICE_WEBHOOK_PORT`, 3100).
 >

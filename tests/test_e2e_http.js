@@ -85,13 +85,15 @@ function crearVtigerFalso({ rechazaLogin = false } = {}) {
     }
 
     if (u.searchParams.get('action') === 'ExportPDF') {
-      if (u.searchParams.get('folderid') === '7') {
+      // vTiger real: la accion devuelve el PDF oficial cuando la URL lleva `app`
+      // (la que usa la interfaz). Sin `app`, devuelve HTML.
+      if (u.searchParams.get('app') || u.searchParams.get('folderid') === '7') {
         estado.pdfs++;
         res.writeHead(200, { 'content-type': 'application/pdf' });
         return res.end(PDF);
       }
       res.writeHead(200, { 'content-type': 'text/html' });
-      return res.end('<html>sin plantilla</html>');
+      return res.end('<html>sin app: la UI devuelve HTML</html>');
     }
 
     res.writeHead(404, { 'content-type': 'text/plain' });
@@ -232,11 +234,10 @@ const r1 = await publicarFacturaDeContacto({
 assert(r1.publicado === true, `La factura se publica (motivo: ${r1.motivo})`);
 assert(r1.url === `http://127.0.0.1:${puertoGhl}/cdn/factura.pdf`, 'Devuelve la URL publica real del servidor');
 assert(r1.fileId === 'file_e2e', 'Devuelve el fileId de la Media Library');
-// VIA B: el invoice se GENERA en el motor. El canal web de vTiger no se toca
-// (verificado contra la instancia real: vTiger no tiene plantilla PDF para estas ordenes).
-assert(vt.estado.logins === 0, `NO se loguea en vTiger: el PDF se genera localmente (recibido: ${vt.estado.logins})`);
-assert(vt.estado.pdfs === 0, 'NO se descarga ningun PDF de vTiger');
-assert(vt.estado.posts.length === 0, 'NO hay POST al canal web de vTiger');
+// OPCION A: el PDF es el OFICIAL de vTiger (accion ExportPDF como la usa la UI).
+assert(vt.estado.logins === 1, `Se loguea UNA vez en vTiger (sesion reutilizada; recibido: ${vt.estado.logins})`);
+assert(vt.estado.pdfs === 1, 'Se descarga el PDF OFICIAL una vez');
+assert(vt.estado.posts.length === 1 && /__vtrftk=/.test(vt.estado.posts[0].cuerpo), 'El POST de login lleva el token CSRF');
 
 // ------------------------------------------------------------------------------
 console.log('\n[TEST 2] El PDF llega integro por multipart a la Media Library');
@@ -259,10 +260,12 @@ assert(ghl.estado.auths.every(a => a === `Bearer ${PIT}`), 'Todas las llamadas a
 
 // ------------------------------------------------------------------------------
 console.log('\n[TEST 4] Idempotencia por HTTP: la segunda pasada no toca nada');
+const pdfsAntes = vt.estado.pdfs;
 const subidasAntes = ghl.estado.subidas.length;
 const putsAntes = ghl.estado.puts.length;
 const r2 = await publicarFacturaDeContacto({ contactId: 'contacto-e2e', orden: { id: '6x1', numeroOrden: 'G-04212158' }, sede: 'PALACIOS' });
 assert(r2.publicado === false && r2.motivo === 'YA_PUBLICADA', `Segunda pasada -> YA_PUBLICADA (recibido: ${r2.motivo})`);
+assert(vt.estado.pdfs === pdfsAntes, 'NO se vuelve a descargar el PDF (el corte temprano actua antes de bajar nada)');
 assert(ghl.estado.subidas.length === subidasAntes && ghl.estado.puts.length === putsAntes, 'NO se vuelve a subir ni a marcar el contacto');
 
 // ------------------------------------------------------------------------------

@@ -252,6 +252,27 @@ export function crearClienteSesionWeb(opts = {}) {
     return extraerFolderIdsPdf(buf.toString('utf8'));
   }
 
+  /**
+   * DESCARGA DEL DOCUMENTO OFICIAL (el que genera el boton "Exportar a PDF" de la UI).
+   *
+   * URL verificada contra la interfaz real:
+   *   index.php?module=SalesOrder&action=ExportPDF&record=<id>&app=MARKETING
+   * El parametro `app` es OBLIGATORIO: sin el, vTiger devuelve la vista en HTML en
+   * lugar del PDF. Es UNA sola peticion por documento (no satura la API).
+   */
+  async function descargarDocumentoOficial({ record, modulo = 'SalesOrder', app = 'MARKETING' } = {}) {
+    assertAccionWebPermitida('ExportPDF');
+    if (!record) return { ok: false, buf: null, status: 0, motivo: 'SIN_RECORD' };
+
+    const ruta = `index.php?module=${modulo}&action=ExportPDF&record=${encodeURIComponent(record)}&app=${encodeURIComponent(app)}`;
+    const { status, buf } = await getWeb(ruta, { accion: 'ExportPDF' });
+
+    if (!esPdf(buf)) {
+      return { ok: false, buf: null, status, motivo: 'EXPORT_PDF_NO_DEVOLVIO_PDF', detalle: buf.toString('latin1').replace(/\s+/g, ' ').slice(0, 120) };
+    }
+    return { ok: true, buf, status, motivo: null, bytes: buf.length };
+  }
+
   /** Descarga el PDF oficial de un registro. */
   async function descargarPdf({ record, modulo = 'SalesOrder', folderId = null } = {}) {
     assertAccionWebPermitida('ExportPDF');
@@ -284,6 +305,7 @@ export function crearClienteSesionWeb(opts = {}) {
     asegurarSesion,
     getWeb,
     descubrirFolderIds,
+    descargarDocumentoOficial,
     descargarPdf,
     descargarPdfAuto,
     sesionVigente: cookiesVigentes,

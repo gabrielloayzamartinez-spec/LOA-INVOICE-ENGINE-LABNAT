@@ -81,7 +81,8 @@ async function comandoCheck() {
   linea(JSON.stringify(resumenConfig(cfg), null, 2));
 
   // La sesion web de vTiger (Via A) YA NO se usa: el invoice se genera localmente.
-  const v = validarConfig(cfg, { webservice: true, sesionWeb: false, ghl: true });
+  // Si el PDF se toma de vTiger (OPCION A, por defecto), la sesion web es OBLIGATORIA.
+  const v = validarConfig(cfg, { webservice: true, sesionWeb: cfg.pdf.fuente === 'vtiger', ghl: true });
   linea(`\nConfiguracion: ${v.ok ? 'COMPLETA' : `FALTAN -> ${v.faltantes.join(', ')}`}`);
   if (!cfg.habilitado) linea('Interruptor: APAGADO (INVOICE_PDF_ENABLED=false). Nada se publicara.');
 
@@ -111,7 +112,7 @@ async function comandoCheck() {
       linea(`vTiger sesion web: ERROR -> ${e.code || e.name}: ${e.message}`);
     }
   } else {
-    linea('\nvTiger sesion web: no configurada (no hace falta: el invoice se genera con la plantilla propia)');
+    linea(`\nvTiger sesion web: no configurada${cfg.pdf.fuente === 'vtiger' ? ' -> OBLIGATORIA para el PDF OFICIAL (definir VTIGER_WEB_USERNAME / VTIGER_WEB_PASSWORD)' : ' (no hace falta: se usa la plantilla propia)'}`);
   }
 
   titulo('Ultimos eventos de auditoria');
@@ -122,21 +123,32 @@ async function comandoCheck() {
 // COMANDO: test-pdf
 // ------------------------------------------------------------------------------
 async function comandoTestPdf() {
-  const { record } = args();
-  titulo('TEST-PDF - Descarga del PDF oficial (no publica)');
+  const { record, app } = args();
+  titulo('TEST-PDF - Descarga del PDF OFICIAL de vTiger (no publica nada)');
   if (!record) return linea('Falta --record=<id de SalesOrder>.');
 
   const sesion = crearClienteSesionWeb();
-  const carpeta = await sesion.descubrirFolderIds({ record, modulo: 'SalesOrder' });
-  linea(`Plantillas PDF encontradas: ${carpeta.length ? carpeta.join(', ') : 'ninguna'}`);
+  const appEfectiva = app ? String(app) : cfg.pdf.app;
 
-  const r = await sesion.descargarPdfAuto({ record, modulo: 'SalesOrder' });
-  if (!r.ok) return linea(`[BLOQUEADO] No se obtuvo el PDF (folderId=${r.folderId}, intentos=${r.intentos}).`);
+  // Metodo principal: la URL exacta que usa la interfaz (ExportPDF + app).
+  const r = await sesion.descargarDocumentoOficial({ record, modulo: 'SalesOrder', app: appEfectiva });
+  let buffer = r.ok ? r.buf : null;
+  let origen = `ExportPDF + app=${appEfectiva}`;
 
-  const destino = path.join('data', 'out', `factura_${String(record).replace(/[^A-Za-z0-9-]/g, '')}.pdf`);
+  if (!r.ok) {
+    linea(`[aviso] El PDF oficial no se obtuvo (${r.motivo}${r.detalle ? `: ${r.detalle}` : ''}).`);
+    linea('        Probando la via con folderid (plantillas del modulo)...');
+    const alt = await sesion.descargarPdfAuto({ record, modulo: 'SalesOrder' });
+    if (alt.ok) { buffer = alt.buf; origen = `ExportPDF + folderid=${alt.folderId}`; }
+    else return linea(`[BLOQUEADO] No se obtuvo el PDF (oficial: ${r.motivo}; folderid: sin resultado).`);
+  }
+
+  const destino = path.join('data', 'out', `OFICIAL_${String(record).replace(/[^A-Za-z0-9-]/g, '')}.pdf`);
   fs.mkdirSync(path.dirname(destino), { recursive: true });
-  fs.writeFileSync(destino, r.buf);
-  linea(`[OK] PDF de ${r.buf.length} bytes guardado en ${destino}`);
+  fs.writeFileSync(destino, buffer);
+  linea(`[OK] PDF de ${buffer.length} bytes (${origen})`);
+  linea(`     Guardado en ${destino}`);
+  linea('     (No se subio nada a GHL ni se publico ninguna factura.)');
 }
 
 // ------------------------------------------------------------------------------
@@ -221,7 +233,7 @@ async function comandoServe() {
   const { port } = args();
   titulo('SERVE - Endpoint de eventos (disparador unico, SIN barrido)');
 
-  const validacion = validarConfig(cfg, { webservice: true, sesionWeb: false, ghl: true, webhook: true });
+  const validacion = validarConfig(cfg, { webservice: true, sesionWeb: cfg.pdf.fuente === 'vtiger', ghl: true, webhook: true });
   if (!validacion.ok) return linea(`[STOP] Faltan variables: ${validacion.faltantes.join(', ')}`);
   if (!cfg.habilitado) return linea('[STOP] INVOICE_PDF_ENABLED=false: el endpoint responderia DESACTIVADO. Activarlo para publicar.');
 
@@ -280,7 +292,7 @@ async function unCiclo({ cursor, rutaCursor }) {
 
 async function comandoOnce() {
   titulo('ONCE - Recuperacion manual: un barrido de compras (el flujo normal es por evento)');
-  const validacion = validarConfig(cfg, { webservice: true, sesionWeb: false, ghl: true });
+  const validacion = validarConfig(cfg, { webservice: true, sesionWeb: cfg.pdf.fuente === 'vtiger', ghl: true });
   if (!validacion.ok) return linea(`[STOP] Faltan variables: ${validacion.faltantes.join(', ')}`);
   if (!cfg.habilitado) return linea('[STOP] El interruptor esta APAGADO. Poner INVOICE_PDF_ENABLED=true para publicar.');
 
@@ -290,7 +302,7 @@ async function comandoOnce() {
 
 async function comandoScan() {
   titulo(`SCAN - Recuperacion continua cada ${cfg.escaneo.intervaloMinutos} minuto(s) (el flujo normal es por evento)`);
-  const validacion = validarConfig(cfg, { webservice: true, sesionWeb: false, ghl: true });
+  const validacion = validarConfig(cfg, { webservice: true, sesionWeb: cfg.pdf.fuente === 'vtiger', ghl: true });
   if (!validacion.ok) return linea(`[STOP] Faltan variables: ${validacion.faltantes.join(', ')}`);
   if (!cfg.habilitado) return linea('[STOP] El interruptor esta APAGADO. Poner INVOICE_PDF_ENABLED=true para publicar.');
 

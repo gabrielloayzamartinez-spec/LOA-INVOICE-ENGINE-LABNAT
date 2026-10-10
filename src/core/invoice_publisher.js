@@ -134,22 +134,38 @@ export async function agregarTagsContacto(contactId, tags, { headers, fetchImpl 
 }
 
 /** Construye las dependencias REALES del caso de uso. */
-export function crearDepsFactura({ apiKeyCentral, locationIdCentral, fetchImpl = null, clienteSesionWeb = null, empresa = {} } = {}) {
+export function crearDepsFactura({ apiKeyCentral, locationIdCentral, fetchImpl = null, clienteSesionWeb = null, empresa = {}, pdf = null } = {}) {
   const headers = headersCentral(apiKeyCentral);
-  // El cliente de sesion web se mantiene solo por si algun dia se reactiva la
-  // Via A (PDF oficial). El flujo vigente NO lo usa.
-  const cliente = clienteSesionWeb || null;
+  const cfg = configFactura();
+  const opcionesPdf = pdf || cfg.pdf || { fuente: 'vtiger', app: 'MARKETING', fallbackPropio: true };
+  const cliente = clienteSesionWeb || crearClienteSesionWeb(fetchImpl ? { fetchImpl } : {});
+
+  /** Genera el PDF con la plantilla propia (via de respaldo). */
+  const generarPropio = async ({ orden, contacto }) => {
+    const clienteDoc = contactoParaInvoice({ contacto, orden });
+    const buf = await generarFacturaPdf({ orden, contacto: clienteDoc, empresa: { ...EMPRESA_POR_DEFECTO, ...empresa } });
+    return { ok: true, buf, generado: true };
+  };
 
   return {
-    // VIA B: el invoice se GENERA en el motor con la plantilla propia.
-    // Verificado contra la instancia real: vTiger NO tiene plantilla PDF para
-    // estas ordenes ("plantillas PDF encontradas: ninguna"), asi que la Via A
-    // (descargar el PDF oficial) no es aplicable.
+    // ORIGEN DEL PDF (INVOICE_PDF_SOURCE):
+    //   'vtiger' -> PDF OFICIAL de vTiger (accion ExportPDF). Trae el logo, la tabla
+    //               completa de productos y los totales ya aprobados. Es UNA peticion
+    //               por factura y la sesion web se reutiliza (single-flight), por lo
+    //               que NO satura la API de vTiger.
+    //   'propio' -> plantilla del motor (respaldo, sin depender del canal web).
     descargarPdf: async ({ orden, contacto }) => {
+      if (opcionesPdf.fuente === 'vtiger') {
+        try {
+          const r = await cliente.descargarDocumentoOficial({ record: orden.id, modulo: 'SalesOrder', app: opcionesPdf.app });
+          if (r.ok) return { ok: true, buf: r.buf, oficial: true, bytes: r.bytes };
+          if (!opcionesPdf.fallbackPropio) return { ok: false, motivo: 'PDF_OFICIAL_NO_DISPONIBLE', detalle: r.motivo };
+        } catch (e) {
+          if (!opcionesPdf.fallbackPropio) return { ok: false, motivo: 'PDF_OFICIAL_FALLIDO', detalle: e.message };
+        }
+      }
       try {
-        const clienteDoc = contactoParaInvoice({ contacto, orden });
-        const buf = await generarFacturaPdf({ orden, contacto: clienteDoc, empresa: { ...EMPRESA_POR_DEFECTO, ...empresa } });
-        return { ok: true, buf, generado: true };
+        return await generarPropio({ orden, contacto });
       } catch (e) {
         return { ok: false, motivo: 'GENERACION_PDF_FALLIDA', detalle: e.message };
       }
