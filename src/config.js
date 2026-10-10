@@ -95,7 +95,9 @@ export function configFactura() {
       // 'evento' = el CRM avisa (sin barrido). 'barrido' = recuperacion manual.
       trigger: String(env('INVOICE_TRIGGER', 'evento')).toLowerCase(),
       token: env('INVOICE_WEBHOOK_TOKEN', ''),
-      puerto: Math.min(Math.max(envInt('INVOICE_WEBHOOK_PORT', 3100), 1), 65535)
+      // En plataformas como Render el puerto lo asigna la plataforma (variable PORT).
+      // Se respeta ese valor; si no existe, se usa INVOICE_WEBHOOK_PORT (local).
+      puerto: Math.min(Math.max(envInt('PORT', envInt('INVOICE_WEBHOOK_PORT', 3100)), 1), 65535)
     }
   };
 }

@@ -164,17 +164,54 @@ npm run test:e2e            # integración por HTTP real: servidores vTiger y GH
 | Toda la lógica de idempotencia y el contrato de campos/tags | ✅ Formulario de login de vTiger (v7, CSRF `__vtrftk`, **sin captcha**) |
 | Sesión web: CSRF, cookies, caché, *single-flight*, renovación | ✅ `ORDER BY spl_fecha_ultima_compra DESC` y filtro por fecha en vTiger |
 | Subida multipart y **todos** los modos de fallo (401/403/5xx/red) | ✅ Contactos y `SalesOrder` legibles (campo `total` **denegado**: se usa `hdnGrandTotal`) |
-| Flujo completo `vTiger → PDF → GHL → tags` | ✅ Generación del invoice con **datos reales** de vTiger (`S-96567`, MIGUEL REVILLA, 160,00 USD) |
-| Detección de compras, cursor y reintentos | ✅ Disparador real: `cf_994 = "VENDIDO"` y nº de orden `S-XXXXX` de `salesorder_no` |
-| — | ⏳ Publicación real en la Media Library (requiere el PIT de la Cuenta Empresa) |
+| Flujo completo `vTiger → PDF → GHL → tags` | ✅ Invoice generado con **datos reales** (`S-96567` · ELIZABETH CRUZ · `PO BOX 229` · 210,00 USD) |
+| Detección de compras, cursor y reintentos | ✅ Disparador real: `cf_994 = "VENDIDO"`, nº `S-XXXXX` de `salesorder_no`, dirección en la **orden** (denegada en el contacto) |
+| Publicación en la Media Library | ✅ **Subida real HTTP 201** → URL pública `https://assets.cdn.filesafe.space/.../media/….pdf` |
+| — | ⏳ Prueba de punta a punta marcando un contacto real y enviando el SMS (requiere campos + workflow en GHL) |
 
 ---
 
-## 📦 Despliegue
+## 📦 Despliegue en Render (24/7)
 
-- **Cron / Render / Railway**: `npm run once` con un cron cada N minutos, o `npm start` (`scan`) como worker continuo.
-- **Estado**: el cursor vive en `data/cursor.json` (incluido en `.gitignore`). En plataformas efímeras, montar un disco persistente para no perderlo (si se pierde, el campo `Factura Nº Orden` de GHL sigue evitando duplicados).
-- **Auditoría**: `data/logs/audit.jsonl` (JSONL append-only).
+El motor es un **servicio WEB** (no cron): el endpoint de eventos debe estar siempre escuchando para recibir el aviso de cada venta.
+
+| Ajuste en Render | Valor |
+|---|---|
+| Tipo | **Web Service** |
+| Runtime / Node | **Node 20** (`NODE_VERSION=20`) |
+| Build Command | `npm install` |
+| Start Command | `npm run serve` |
+| Health Check Path | `/salud` |
+| Plan | **starter o superior** (en el plan gratuito el servicio duerme y los eventos se pierden) |
+| Región | la más cercana a Miami (p. ej. `oregon`/`ohio`) |
+
+**Variables de entorno a cargar** (los secretos, en el panel — nunca en el repo):
+
+```
+INVOICE_PDF_ENABLED=false          ← encender SOLO tras la prueba validada
+VTIGER_URL=https://ventascallcenter.com
+VTIGER_USERNAME=…
+VTIGER_ACCESS_KEY=…
+GHL_API_KEY_CENTRAL=…              ← el PIT de la Cuenta Empresa
+GHL_LOCATION_ID_CENTRAL=…
+GHL_BASE_URL=https://services.leadconnectorhq.com
+INVOICE_TRIGGER=evento
+INVOICE_WEBHOOK_TOKEN=…            ← token compartido del endpoint (48 caracteres)
+INVOICE_SCAN_SEDE=PALACIOS
+INVOICE_ESTADO_COMPRA=VENDIDO
+INVOICE_CURSOR_PATH=/var/data/cursor.json    ← con disco persistente
+INVOICE_LOG_DIR=/var/data/logs
+```
+
+> `PORT` lo inyecta Render automáticamente y el motor lo respeta (verificado: con `PORT=10000` escucha en 10000; en local cae a `INVOICE_WEBHOOK_PORT`, 3100).
+>
+> Existe un `render.yaml` en la raíz como plantilla de Infrastructure as Code (el servicio se puede crear desde ahí o a mano en el panel).
+
+**Al terminar el deploy, verificar:** `https://<tu-servicio>.onrender.com/salud` → debe responder `{"ok":true,"servicio":"loa-invoice-engine"}`.
+
+- **Modo recuperación** (si el motor estuvo caído): `npm run once` como **Cron Job** cada N minutos, o manualmente.
+- **Estado**: el cursor vive en `INVOICE_CURSOR_PATH` (por defecto `data/cursor.json`). En plataformas efímeras, montar un disco persistente; si se pierde, el campo `Factura Nº Orden` de GHL sigue evitando duplicados.
+- **Auditoría**: `INVOICE_LOG_DIR/audit.jsonl` (JSONL append-only).
 
 ---
 

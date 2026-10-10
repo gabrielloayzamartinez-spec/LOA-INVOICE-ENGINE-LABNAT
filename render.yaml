@@ -1,0 +1,69 @@
+# ==============================================================================
+# LOA INVOICE ENGINE - Despliegue en Render (Infrastructure as Code)
+# ==============================================================================
+# Servicio WEB (no cron): el endpoint de eventos debe estar siempre escuchando.
+#
+# Cargar las variables marcadas con `sync: false` en el panel de Render
+# (Environment). Ningun secreto vive en este archivo.
+# ==============================================================================
+
+services:
+  - type: web
+    name: loa-invoice-engine
+    runtime: node
+    plan: starter
+    region: oregon
+    branch: main
+    buildCommand: npm install
+    startCommand: npm run serve
+    healthCheckPath: /salud
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+
+      # --- Interruptor general (poner en true cuando la prueba este validada) ---
+      - key: INVOICE_PDF_ENABLED
+        value: "false"
+
+      # --- vTiger (webservice, SOLO LECTURA) ---
+      - key: VTIGER_URL
+        value: https://ventascallcenter.com
+      - key: VTIGER_USERNAME
+        sync: false
+      - key: VTIGER_ACCESS_KEY
+        sync: false
+
+      # --- GHL Cuenta Empresa ---
+      - key: GHL_API_KEY_CENTRAL
+        sync: false
+      - key: GHL_LOCATION_ID_CENTRAL
+        sync: false
+      - key: GHL_BASE_URL
+        value: https://services.leadconnectorhq.com
+
+      # --- Disparador y deteccion ---
+      - key: INVOICE_TRIGGER
+        value: evento
+      - key: INVOICE_WEBHOOK_TOKEN
+        sync: false
+      - key: INVOICE_SCAN_SEDE
+        value: PALACIOS
+      - key: INVOICE_ESTADO_COMPRA
+        value: VENDIDO
+
+      # --- Estado persistente (el cursor vive en data/cursor.json) ---
+      - key: INVOICE_CURSOR_PATH
+        value: /var/data/cursor.json
+      - key: INVOICE_LOG_DIR
+        value: /var/data/logs
+
+# Disco persistente: sin el, el cursor se pierde en cada deploy (no es critico:
+# el campo `Factura Nº Orden` de GHL sigue evitando duplicados, pero se pierde
+# el historial local y la auditoria).
+# Descomentar si el plan lo permite:
+#
+# disks:
+#   - name: loa-invoice-data
+#     mountPath: /var/data
+#     sizeGB: 1
