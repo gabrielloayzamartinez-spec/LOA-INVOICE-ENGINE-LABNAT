@@ -128,7 +128,9 @@ const r5 = await atenderEventoCompra({
   payload: { salesorder_id: '6x1', ghlContactId: 'contacto-directo' }, clienteVtiger: vt5, publicar: pub5.fn
 });
 assert(r5.ok === true && pub5.llamadas[0].contactId === 'contacto-directo', 'Usa el contactId del evento sin buscarlo');
-assert(vt5.consultas.filter(s => /FROM Contacts/i.test(s)).length === 0, 'No consulta el telefono si el contacto ya vino');
+const consultasContacto = vt5.consultas.filter(s => /FROM Contacts/i.test(s));
+assert(consultasContacto.length === 1, 'Consulta el contacto UNA vez para la sede real, aunque el contactId ya venga');
+assert(/cf_3451/.test(consultasContacto[0] || ''), 'Pide la sede (cf_3451) para el monitor por sede');
 
 // ------------------------------------------------------------------------------
 console.log('\n[TEST 6] Codigos HTTP por tipo de resultado');

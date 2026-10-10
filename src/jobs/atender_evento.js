@@ -28,6 +28,7 @@ import { escaparValor } from '../connectors/vtiger_webservice.js';
 import { normalizarOrden, ORDEN_SELECT } from './detectar_compras_nuevas.js';
 import { publicarFacturaDeContacto } from '../core/invoice_publisher.js';
 import { recordAuditEvent } from '../core/audit.js';
+import { registrarPipeline } from '../core/pipeline.js';
 
 /** Motivos propios del canal de eventos (el resto los aporta el publicador). */
 export const MOTIVOS_EVENTO = {
@@ -95,7 +96,8 @@ export async function atenderEventoCompra({
   buscarContactoGhl = null,
   sede = null,
   habilitado = null,
-  publicar = publicarFacturaDeContacto
+  publicar = publicarFacturaDeContacto,
+  pipelineArchivo = 'data/pipeline.jsonl'
 } = {}) {
   const evento = normalizarEventoCompra(payload);
   const vacio = { resultado: null, orden: null };
@@ -106,6 +108,7 @@ export async function atenderEventoCompra({
   if (!clienteVtiger || typeof clienteVtiger.consultar !== 'function') {
     throw new TypeError('atenderEventoCompra requiere clienteVtiger.consultar() para resolver la orden.');
   }
+  registrarPipeline(pipelineArchivo, { orden: evento.ordenId, numeroOrden: evento.numeroOrden, sede, estado: 'DETECTADA' });
 
   // 1) La orden (una sola consulta, acotada por id o por numero).
   const where = evento.ordenId
@@ -125,23 +128,27 @@ export async function atenderEventoCompra({
 
   const orden = normalizarOrden(filas[0]);
 
-  // 2) Contacto destino en GHL: del evento, o por telefono.
+  // 2) Contacto destino en GHL: del evento, o por telefono. Ademas se resuelve la
+  // SEDE real (cf_3451) para el monitor por sede. cf_3451 esta permitido en Contacts.
   let contactId = evento.ghlContactId || '';
   let detalleContacto = null;
+  let sedeEfectiva = sede;
+
+  const vTigerContactId = evento.vTigerContactId || String(filas[0].contact_id || '').trim();
+
+  if (vTigerContactId) {
+    try {
+      const c = await clienteVtiger.consultar(`SELECT id, phone, mobile, cf_3451 FROM Contacts WHERE id = '${escaparValor(vTigerContactId)}' LIMIT 1`);
+      const cc = c[0] || {};
+      if (String(cc.cf_3451 || '').trim()) sedeEfectiva = String(cc.cf_3451).trim();
+      if (!evento.telefono && !contactId) evento.telefono = String(cc.phone || cc.mobile || '').trim();
+    } catch (e) {
+      detalleContacto = `No se pudo leer el contacto en vTiger: ${e.message}`;
+    }
+  }
 
   if (!contactId) {
-    let telefono = evento.telefono;
-    const vTigerContactId = evento.vTigerContactId || String(filas[0].contact_id || '').trim();
-
-    if (!telefono && vTigerContactId) {
-      try {
-        const c = await clienteVtiger.consultar(`SELECT id, phone, mobile FROM Contacts WHERE id = '${escaparValor(vTigerContactId)}' LIMIT 1`);
-        telefono = String(c[0]?.phone || c[0]?.mobile || '').trim();
-      } catch (e) {
-        detalleContacto = `No se pudo leer el telefono en vTiger: ${e.message}`;
-      }
-    }
-
+    const telefono = evento.telefono;
     if (telefono && buscarContactoGhl) contactId = (await buscarContactoGhl(telefono)) || '';
     if (!contactId) {
       return {
@@ -154,8 +161,8 @@ export async function atenderEventoCompra({
     }
   }
 
-  // 3) Publicacion de ESA factura.
-  const resultado = await publicar({ contactId, orden, sede, habilitado });
+  // 3) Publicacion de ESA factura (con la sede real del contacto).
+  const resultado = await publicar({ contactId, orden, sede: sedeEfectiva, habilitado });
 
   recordAuditEvent({
     type: resultado?.publicado ? 'INVOICE_EVENTO_PUBLICADO' : 'INVOICE_EVENTO_OMITIDO',

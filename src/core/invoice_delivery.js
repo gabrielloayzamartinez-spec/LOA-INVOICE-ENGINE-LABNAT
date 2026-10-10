@@ -19,6 +19,7 @@
  */
 
 import { recordAuditEvent } from './audit.js';
+import { registrarPipeline } from './pipeline.js';
 import {
   decidirPublicacion, construirPuenteFactura, leerEstadoPuenteFactura,
   nombreArchivoFactura, MOTIVOS_PUBLICACION
@@ -57,9 +58,17 @@ export async function entregarFacturaDeOrden({
   fieldIds = {},
   deps = {},
   habilitado = null,
-  sede = null
+  sede = null,
+  pipeline = null,
+  pipelineArchivo = 'data/pipeline.jsonl'
 } = {}) {
   const resultado = { publicado: false, motivo: null, url: null, numeroOrden: null, fileId: null, detalle: null, pasos: [] };
+
+  // Traza por etapa (base del monitor por sede). Nunca detiene el flujo.
+  const marcarPipeline = (estado, extra = {}) => {
+    const registrar = pipeline || ((e) => registrarPipeline(pipelineArchivo, e));
+    try { registrar({ orden: orden?.id || '', numeroOrden: orden?.numeroOrden || '', sede, estado, ...extra }); } catch { /* no bloquea */ }
+  };
 
   // 0. Interruptor general.
   const activo = habilitado === null ? facturaPdfHabilitada() : Boolean(habilitado);
@@ -67,11 +76,13 @@ export async function entregarFacturaDeOrden({
   resultado.pasos.push('flag_ok');
 
   // 1. Datos minimos.
-  if (!contactId) return { ...resultado, motivo: MOTIVOS_ENTREGA.SIN_CONTACTO };
+  if (!contactId) { marcarPipeline('OMITIDO', { motivo: 'SIN_CONTACTO' }); return { ...resultado, motivo: MOTIVOS_ENTREGA.SIN_CONTACTO }; }
   if (!String(orden?.numeroOrden || '').trim() || !String(orden?.id || '').trim()) {
+    marcarPipeline('OMITIDO', { motivo: 'ORDEN_INVALIDA' });
     return { ...resultado, motivo: MOTIVOS_ENTREGA.ORDEN_INVALIDA };
   }
   resultado.numeroOrden = String(orden.numeroOrden).trim();
+  marcarPipeline('ORDEN_RESUELTA');
 
   const faltantes = ['descargarPdf', 'subirPdf', 'escribirContacto'].filter(k => typeof deps[k] !== 'function');
   if (faltantes.length) {
@@ -83,6 +94,7 @@ export async function entregarFacturaDeOrden({
   const previo = decidirPublicacion({ orden, estadoActual: estado, requerirPdf: false });
   if (!previo.publicar) {
     const motivo = previo.motivo === MOTIVOS_PUBLICACION.YA_PUBLICADA ? MOTIVOS_ENTREGA.YA_PUBLICADA : MOTIVOS_ENTREGA.ORDEN_INVALIDA;
+    marcarPipeline('OMITIDO', { motivo: previo.motivo });
     return { ...resultado, motivo, detalle: previo.motivo };
   }
   resultado.pasos.push('corte_temprano_ok');
@@ -95,6 +107,7 @@ export async function entregarFacturaDeOrden({
     pdf = { ok: false, motivo: 'EXCEPCION_DESCARGA', detalle: e.message };
   }
   if (!pdf?.ok || !pdf?.buf) {
+    marcarPipeline('FALLO_DESCARGA', { motivo: pdf?.motivo || 'SIN_PDF' });
     auditar({
       type: 'INVOICE_PDF_DESCARGA_FALLIDA', severity: 'warn', sede,
       vTigerId: orden.id, message: `No se obtuvo el PDF de la orden ${resultado.numeroOrden}: ${pdf?.motivo || 'sin detalle'}`
@@ -102,6 +115,7 @@ export async function entregarFacturaDeOrden({
     return { ...resultado, motivo: MOTIVOS_ENTREGA.PDF_NO_DISPONIBLE, detalle: pdf?.motivo || pdf?.detalle || null, pasos: [...resultado.pasos, 'pdf_fallido'] };
   }
   resultado.pasos.push('pdf_ok');
+  marcarPipeline('PDF_OBTENIDO');
 
   // 4. Publicacion en la Media Library.
   const nombreArchivo = nombreArchivoFactura(resultado.numeroOrden);
@@ -112,6 +126,7 @@ export async function entregarFacturaDeOrden({
     subida = { ok: false, motivo: 'EXCEPCION_SUBIDA', detalle: e.message };
   }
   if (!subida?.ok || !subida?.url) {
+    marcarPipeline('FALLO_SUBIDA', { motivo: subida?.motivo || 'SIN_URL' });
     auditar({
       type: 'INVOICE_PDF_PUBLICACION_FALLIDA', severity: 'warn', sede,
       vTigerId: orden.id, message: `No se pudo publicar el PDF de ${resultado.numeroOrden}: ${subida?.motivo || 'sin detalle'}`
@@ -121,6 +136,7 @@ export async function entregarFacturaDeOrden({
   resultado.url = subida.url;
   resultado.fileId = subida.fileId || null;
   resultado.pasos.push('media_ok');
+  marcarPipeline('PUBLICADO', { url: subida.url });
 
   // 5. Validacion FINAL con la URL real.
   const final = decidirPublicacion({ orden, estadoActual: estado, urlPdf: subida.url });
@@ -141,6 +157,7 @@ export async function entregarFacturaDeOrden({
     escritura = { ok: false, detalle: e.message };
   }
   if (escritura && escritura.ok === false) {
+    marcarPipeline('FALLO_ESCRITURA', { detalle: escritura.detalle || 'SIN_DETALLE' });
     auditar({
       type: 'INVOICE_PDF_ESCRITURA_FALLIDA', severity: 'warn', sede,
       vTigerId: orden.id, message: `El PDF se publico (${resultado.url}) pero no se pudo marcar el contacto: ${escritura.detalle || 'sin detalle'}`
@@ -148,6 +165,7 @@ export async function entregarFacturaDeOrden({
     return { ...resultado, motivo: MOTIVOS_ENTREGA.ESCRITURA_FALLIDA, detalle: escritura.detalle || null, pasos: [...resultado.pasos, 'escritura_fallida'] };
   }
   resultado.pasos.push('escritura_ok');
+  marcarPipeline('MARCADO', { url: subida.url });
 
   auditar({
     type: 'INVOICE_PDF_PUBLICADA', severity: 'info', sede,

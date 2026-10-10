@@ -86,7 +86,9 @@ export function configFactura() {
       sede: String(env('INVOICE_SCAN_SEDE', 'PALACIOS')).toUpperCase(),
       // Marca que deja el personal cuando la compra queda EFECTUADA (vTiger cf_994).
       estadoCompra: String(env('INVOICE_ESTADO_COMPRA', 'VENDIDO')).trim(),
-      cursorPath: env('INVOICE_CURSOR_PATH', 'data/cursor.json')
+      cursorPath: env('INVOICE_CURSOR_PATH', 'data/cursor.json'),
+      // Traza por etapa de cada compra (base del monitor `report`).
+      pipelinePath: env('INVOICE_PIPELINE_PATH', 'data/pipeline.jsonl')
     },
     logs: {
       dir: env('INVOICE_LOG_DIR', 'data/logs')

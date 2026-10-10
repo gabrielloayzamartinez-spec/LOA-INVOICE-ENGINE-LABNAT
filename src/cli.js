@@ -25,6 +25,7 @@ import { cargarEnv, configFactura, validarConfig, resumenConfig } from './config
 import { configurarAuditoria, recordAuditEvent, leerAuditoria } from './core/audit.js';
 import { crearClienteVtiger } from './connectors/vtiger_webservice.js';
 import { crearClienteSesionWeb } from './connectors/vtiger_web_session.js';
+import { leerPipeline, resumenPipeline, ultimoEstadoPorOrden, formatearResumen, atascadas } from './core/pipeline.js';
 import { verificarAccesoMedia } from './connectors/ghl_media.js';
 import { ghlFetch } from './connectors/ghl_client.js';
 import { publicarFacturaDeContacto, headersCentral } from './core/invoice_publisher.js';
@@ -372,11 +373,47 @@ async function comandoVerificar() {
 }
 
 // ------------------------------------------------------------------------------
+// COMANDO: report  (MONITOR del pipeline por sede)
+// ------------------------------------------------------------------------------
+async function comandoReport() {
+  const { sede } = args();
+  titulo('REPORT - Pipeline de compras por sede (traza hasta el SMS)');
+
+  const archivo = cfg.escaneo.pipelinePath || 'data/pipeline.jsonl';
+  const filas = leerPipeline(archivo);
+  const porSede = resumenPipeline(filas);
+
+  linea(formatearResumen(porSede));
+  linea('');
+  linea('Etapas de exito: DETECTADA → ORDEN_RESUELTA → PDF_OBTENIDO → PUBLICADO → MARCADO → ENVIADO');
+  linea('  MARCADO = factura publicada y lista para el workflow (exito del motor).');
+  linea('  ENVIADO = GHL confirmo el SMS (tag FACTURA_ENVIADA).');
+  linea('');
+
+  const finales = ultimoEstadoPorOrden(filas);
+  const filtradas = sede ? finales.filter(f => String(f.sede || '') === String(sede).toUpperCase()) : finales;
+  linea(`Ultimas 15 compras${sede ? ` (sede ${sede.toUpperCase()})` : ''}:`);
+  for (const f of filtradas.slice(-15).reverse()) {
+    const hora = (f.ts || '').slice(11, 19);
+    linea(`  ${String(f.numeroOrden || f.orden).padEnd(14)} ${String(f.sede || '-').padEnd(12)} ${f.estado.padEnd(16)} ${hora}  ${f.motivo || f.detalle || ''}`.slice(0, 110));
+  }
+
+  const atasc = atascadas(filas, { minutos: 30 });
+  const atascFiltradas = sede ? atasc.filter(f => String(f.sede || '') === String(sede).toUpperCase()) : atasc;
+  if (atascFiltradas.length) {
+    linea('');
+    linea(`⚠ ATASCADAS (>30 min en etapa intermedia): ${atascFiltradas.length}`);
+    for (const f of atascFiltradas) linea(`  ${f.numeroOrden} (${f.sede || '-'}) -> ${f.estado}`);
+  }
+}
+
+// ------------------------------------------------------------------------------
 // DESPACHO
 // ------------------------------------------------------------------------------
 const comandos = {
   serve: comandoServe,
   check: comandoCheck,
+  report: comandoReport,
   verificar: comandoVerificar,
   'test-pdf': comandoTestPdf,
   preview: comandoPreview,

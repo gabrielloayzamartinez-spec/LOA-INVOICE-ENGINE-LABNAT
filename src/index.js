@@ -48,3 +48,13 @@ export {
 export {
   crearServidorEventos, iniciarServidorEventos, codigoHttpParaResultado
 } from './webhook_server.js';
+
+// Verificacion del invoice contra vTiger
+export { compararInvoiceConVtiger, formatearVerificacion } from './core/invoice_verify.js';
+
+// Pipeline de compra (traza por etapa para el monitor por sede)
+export {
+  ETAPAS_PIPELINE, ETAPAS_FALLO, indiceEtapa,
+  registrarPipeline, leerPipeline, ultimoEstadoPorOrden,
+  resumenPipeline, atascadas, formatearResumen
+} from './core/pipeline.js';
