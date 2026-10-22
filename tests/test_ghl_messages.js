@@ -37,6 +37,20 @@ const msg = construirTextoMensaje({
 assert(msg.includes('Daniel Ramirez'), 'Reemplaza el nombre');
 assert(msg.includes('S-97413'), 'Reemplaza el numero de orden');
 assert(msg.includes('https://cdn.ghl.test/factura.pdf'), 'Reemplaza la URL del PDF');
+assert(!msg.includes('Canal automático de notificaciones'), 'Omite el aviso de no responder canal automatico');
+
+// Test de asignacion de telefonos por sede:
+const msgPalacios = construirTextoMensaje({ nombre: 'Juan', numeroOrden: 'S-1', urlPdf: 'https://url', sede: 'PALACIOS' });
+assert(msgPalacios.includes('888-297-4325'), 'Palacios asigna 888-297-4325');
+
+const msgBenavides = construirTextoMensaje({ nombre: 'Maria', numeroOrden: 'S-2', urlPdf: 'https://url', sede: 'BENAVIDES' });
+assert(msgBenavides.includes('888-720-0078'), 'Benavides asigna 888-720-0078');
+
+const msgRoosevelt = construirTextoMensaje({ nombre: 'Pedro', numeroOrden: 'S-3', urlPdf: 'https://url', sede: 'ROOSEVELT' });
+assert(msgRoosevelt.includes('888-513-0310'), 'Roosevelt asigna 888-513-0310');
+
+const msgPiura = construirTextoMensaje({ nombre: 'Ana', numeroOrden: 'S-4', urlPdf: 'https://url', sede: 'PIURA' });
+assert(msgPiura.includes('661-242-5576'), 'Piura asigna 661-242-5576');
 
 const msgCustom = construirTextoMensaje({
   nombre: 'Carlos',

@@ -186,7 +186,12 @@ export async function entregarFacturaDeOrden({
     return { ...resultado, motivo: MOTIVOS_ENTREGA.YA_PUBLICADA, detalle: final.motivo, pasos: [...resultado.pasos, 'validacion_final_bloqueo'] };
   }
 
-  const puente = construirPuenteFactura({ urlPdf: urlEfectiva, numeroOrden: resultado.numeroOrden, fieldIds });
+  const puente = construirPuenteFactura({
+    urlPdf: urlEfectiva,
+    numeroOrden: resultado.numeroOrden,
+    sede: orden?.sede || sede || '',
+    fieldIds
+  });
   if (!puente.customFields.length) {
     return { ...resultado, motivo: MOTIVOS_ENTREGA.DEPS_INCOMPLETAS, detalle: 'No se resolvio ningun campo puente en la location destino.', pasos: [...resultado.pasos, 'sin_campos'] };
   }

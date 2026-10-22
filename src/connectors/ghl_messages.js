@@ -12,8 +12,10 @@
 
 import { ghlFetch } from './ghl_client.js';
 import { configFactura } from '../config.js';
-import { headersCentral } from '../core/invoice_publisher.js';
 import { recordAuditEvent } from '../core/audit.js';
+import { SEDES_ATENCION, normalizarSede, obtenerAtencionSede } from '../core/sedes.js';
+
+export { SEDES_ATENCION, normalizarSede, obtenerAtencionSede };
 
 export const MOTIVOS_MENSAJE = {
   OK: 'OK',
@@ -24,17 +26,40 @@ export const MOTIVOS_MENSAJE = {
   RECHAZADO: 'RECHAZADO_POR_GHL'
 };
 
-export const PLANTILLA_SMS_DEFECTO = 'Hola {nombre}, gracias por tu compra en Laboratorios Naturales. Aquí puedes ver y descargar tu factura oficial de la orden {numeroOrden}: {urlPdf}';
+export const PLANTILLA_SMS_DEFECTO = 'Hola {nombre}, gracias por tu compra en Laboratorios Naturales. Aquí puedes ver y descargar tu factura oficial de la orden {numeroOrden}: {urlPdf}\n\nPara cualquier consulta o atención al cliente, puedes comunicarte al {telefonoAtencion}.';
+
+export function headersCentral(apiKey) {
+  return {
+    Authorization: `Bearer ${apiKey}`,
+    Version: '2021-07-28',
+    'Content-Type': 'application/json',
+    Accept: 'application/json'
+  };
+}
 
 /**
- * Construye el texto del mensaje a partir de la plantilla.
+ * Construye el texto del mensaje a partir de la plantilla y asigna el teléfono de atención de la sede.
  */
-export function construirTextoMensaje({ nombre = 'cliente', numeroOrden = '', urlPdf = '', plantilla = '' } = {}) {
+export function construirTextoMensaje({
+  nombre = 'cliente',
+  numeroOrden = '',
+  urlPdf = '',
+  sede = '',
+  telefonoAtencion = '',
+  plantilla = ''
+} = {}) {
+  const atencion = obtenerAtencionSede(sede);
+  const tel = String(telefonoAtencion || atencion.telefono).trim();
   const patron = plantilla || process.env.INVOICE_SMS_TEMPLATE || PLANTILLA_SMS_DEFECTO;
+
   return patron
     .replace(/\{nombre\}/gi, String(nombre || 'estimado cliente').trim())
     .replace(/\{numeroOrden\}/gi, String(numeroOrden || '').trim())
-    .replace(/\{urlPdf\}/gi, String(urlPdf || '').trim());
+    .replace(/\{urlPdf\}/gi, String(urlPdf || '').trim())
+    .replace(/\{telefonoAtencion\}/gi, tel)
+    .replace(/\{telefonoSede\}/gi, tel)
+    .replace(/\{customerServicePhone\}/gi, tel)
+    .replace(/\{sede\}/gi, atencion.nombre);
 }
 
 /**

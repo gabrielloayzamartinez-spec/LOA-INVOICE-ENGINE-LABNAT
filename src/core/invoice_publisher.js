@@ -27,7 +27,9 @@ import { recordAuditEvent } from './audit.js';
 /** Nombres EXACTOS de los campos puente en GHL. */
 export const NOMBRES_CAMPOS_FACTURA = {
   [CLAVES_PUENTE_FACTURA.urlFacturaPdf]: 'URL Factura PDF',
-  [CLAVES_PUENTE_FACTURA.facturaNumeroOrden]: 'Factura Nº Orden'
+  [CLAVES_PUENTE_FACTURA.facturaNumeroOrden]: 'Factura Nº Orden',
+  [CLAVES_PUENTE_FACTURA.sedeAsignada]: 'Sede Asignada',
+  [CLAVES_PUENTE_FACTURA.vtigerSede]: 'vTiger Sede / Tienda Compra'
 };
 
 /** Normaliza un nombre para comparar (minusculas, sin acentos ni simbolos). */
@@ -195,6 +197,7 @@ export function crearDepsFactura({ apiKeyCentral, locationIdCentral, fetchImpl =
           nombre,
           numeroOrden: orden?.numeroOrden || '',
           urlPdf: url,
+          sede: orden?.sede || '',
           plantilla: cfgActual.mensaje.plantilla
         });
         const msgRes = await enviarMensajeFacturaGhl({

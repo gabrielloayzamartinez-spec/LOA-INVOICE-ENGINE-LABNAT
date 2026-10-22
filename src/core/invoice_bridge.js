@@ -18,6 +18,8 @@
  * ==============================================================================
  */
 
+import { obtenerAtencionSede } from './sedes.js';
+
 /** Tag que dispara el workflow de envio. */
 export const TAG_FACTURA_LISTA = 'FACTURA_LISTA';
 
@@ -27,7 +29,9 @@ export const TAG_FACTURA_ENVIADA = 'FACTURA_ENVIADA';
 /** Claves logicas de los campos puente. */
 export const CLAVES_PUENTE_FACTURA = {
   urlFacturaPdf: 'urlFacturaPdf',
-  facturaNumeroOrden: 'facturaNumeroOrden'
+  facturaNumeroOrden: 'facturaNumeroOrden',
+  sedeAsignada: 'sedeAsignada',
+  vtigerSede: 'vtigerSede'
 };
 
 /** Motivos de la decision de publicacion. */
@@ -134,7 +138,7 @@ export function decidirPublicacion({
  * Construye el payload de campos + tags para la Cuenta Empresa.
  * Solo incluye los campos cuyos IDs fueron resueltos (fail-safe).
  */
-export function construirPuenteFactura({ urlPdf = '', numeroOrden = '', fieldIds = {} } = {}) {
+export function construirPuenteFactura({ urlPdf = '', numeroOrden = '', sede = '', fieldIds = {} } = {}) {
   const url = String(urlPdf).trim();
   const numero = String(numeroOrden).trim();
 
@@ -149,8 +153,22 @@ export function construirPuenteFactura({ urlPdf = '', numeroOrden = '', fieldIds
   if (fieldIds[CLAVES_PUENTE_FACTURA.facturaNumeroOrden]) {
     customFields.push({ id: fieldIds[CLAVES_PUENTE_FACTURA.facturaNumeroOrden], field_value: numero });
   }
+  if (sede && fieldIds[CLAVES_PUENTE_FACTURA.sedeAsignada]) {
+    const atencion = obtenerAtencionSede(sede);
+    customFields.push({ id: fieldIds[CLAVES_PUENTE_FACTURA.sedeAsignada], field_value: atencion.nombre });
+  }
+  if (sede && fieldIds[CLAVES_PUENTE_FACTURA.vtigerSede]) {
+    const atencion = obtenerAtencionSede(sede);
+    customFields.push({ id: fieldIds[CLAVES_PUENTE_FACTURA.vtigerSede], field_value: atencion.nombre.toUpperCase() });
+  }
 
-  return { customFields, tags: [TAG_FACTURA_LISTA] };
+  const tags = [TAG_FACTURA_LISTA];
+  if (sede) {
+    const atencion = obtenerAtencionSede(sede);
+    tags.push(`SEDE_${atencion.clave}`);
+  }
+
+  return { customFields, tags };
 }
 
 /** Tags de cierre, una vez que el mensaje salio. */
