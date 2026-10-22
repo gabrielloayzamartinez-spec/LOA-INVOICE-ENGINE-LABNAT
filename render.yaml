@@ -70,7 +70,7 @@ services:
       - key: INVOICE_SHORT_DOMAIN
         value: https://facturas.labnaturales.com
       - key: INVOICE_LINKS_PATH
-        value: /var/data/links.json
+        value: data/links.json
 
       # --- Estado persistente (el cursor vive en data/cursor.json) ---
       - key: INVOICE_CURSOR_PATH
