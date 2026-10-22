@@ -44,7 +44,7 @@ export function formatearNombreCompleto(nombre = '', apellido = '') {
   return crudo;
 }
 
-export const PLANTILLA_SMS_DEFECTO = 'Hola {nombreCompleto}, gracias por tu compra en Laboratorios Naturales. Aquí puedes ver y descargar tu factura oficial de la orden {numeroOrden}: {urlPdf}\nPara cualquier consulta o atención al cliente, puedes comunicarte al {telefonoAtencion}.';
+export const PLANTILLA_SMS_DEFECTO = 'Hola {nombreCompleto}, gracias por tu compra en Laboratorios Naturales. Aquí puedes ver y descargar tu factura oficial: {urlPdf}\nPara cualquier consulta o atención al cliente, puedes comunicarte al {telefonoAtencion}.';
 
 export function headersCentral(apiKey) {
   return {

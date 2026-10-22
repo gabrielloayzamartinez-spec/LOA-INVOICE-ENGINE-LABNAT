@@ -35,7 +35,7 @@ const msg = construirTextoMensaje({
   urlPdf: 'https://cdn.ghl.test/factura.pdf'
 });
 assert(msg.includes('Daniel Ramirez'), 'Reemplaza el nombre');
-assert(msg.includes('S-97413'), 'Reemplaza el numero de orden');
+assert(!msg.includes('de la orden'), 'Omite la frase de la orden S-XXXX');
 assert(msg.includes('https://cdn.ghl.test/factura.pdf'), 'Reemplaza la URL del PDF');
 assert(!msg.includes('Canal automático de notificaciones'), 'Omite el aviso de no responder canal automatico');
 
