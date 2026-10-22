@@ -65,6 +65,8 @@ export async function enviarMensajeFacturaGhl({
     contactId: String(contactId).trim(),
     message: String(mensaje).trim()
   };
+  const remitente = cfg.mensaje?.fromNumber;
+  if (remitente) payload.fromNumber = remitente;
 
   try {
     const res = await enviar(url, {

@@ -129,6 +129,7 @@ export function configFactura() {
       // Si es false, se apoya en el workflow de GHL activado por el tag FACTURA_LISTA.
       autoEnviar: envBool('INVOICE_AUTO_SEND_SMS', false),
       tipo: String(env('INVOICE_MESSAGE_TYPE', 'SMS')).toUpperCase(),
+      fromNumber: String(env('INVOICE_SMS_FROM_NUMBER', '+17868828446')).trim(),
       plantilla: env('INVOICE_SMS_TEMPLATE', '')
     },
     webhook: {
