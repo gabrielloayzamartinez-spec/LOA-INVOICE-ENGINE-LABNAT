@@ -108,6 +108,7 @@ export function resolverDestinoFactura(
 
     // 3. Respaldo directo en memoria para ordenes oficiales emitidas
   const estaticos = {
+    'S-97555': 'https://assets.cdn.filesafe.space/ATPYNnsfZ1W8sd6WgWIV/media/3eff4f49-6efe-4b44-a228-8f8780c5b9fc.pdf',
     'S-97589': 'https://assets.cdn.filesafe.space/ATPYNnsfZ1W8sd6WgWIV/media/6921b834-bb46-4dc0-a0c2-74adfdd3891c.pdf',
     'S-97576': 'https://assets.cdn.filesafe.space/ATPYNnsfZ1W8sd6WgWIV/media/86307f58-97f1-46ff-a0fd-a971ca7b7574.pdf',
     'S-97557': 'https://assets.cdn.filesafe.space/ATPYNnsfZ1W8sd6WgWIV/media/5f574888-36e7-487d-b7ba-34f60a838e24.pdf',
