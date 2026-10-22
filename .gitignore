@@ -3,7 +3,8 @@
 .env.local
 
 # Estado persistido (cursor de compras procesadas, logs, auditoria).
-data/
+data/*
+!data/links.json
 
 # Salidas de diagnostico (PDFs de prueba).
 scratch/
