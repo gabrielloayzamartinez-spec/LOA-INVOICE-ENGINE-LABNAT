@@ -58,6 +58,11 @@ export function envInt(clave, porDefecto = 0) {
   return Number.isFinite(n) ? n : porDefecto;
 }
 
+export function envFloat(clave, porDefecto = 0.0) {
+  const n = parseFloat(String(process.env[clave] ?? ''));
+  return Number.isFinite(n) ? n : porDefecto;
+}
+
 /** Configuracion completa del motor de facturas. */
 export function configFactura() {
   return {
@@ -83,12 +88,27 @@ export function configFactura() {
       intervaloMinutos: Math.max(envInt('INVOICE_SCAN_INTERVAL_MINUTES', 15), 1),
       lote: Math.min(Math.max(envInt('INVOICE_SCAN_BATCH', 25), 1), 200),
       dias: Math.min(Math.max(envInt('INVOICE_SCAN_DIAS', 7), 1), 90),
-      sede: String(env('INVOICE_SCAN_SEDE', 'PALACIOS')).toUpperCase(),
+      sede: String(env('INVOICE_SCAN_SEDE', 'TODAS')).toUpperCase(),
       // Marca que deja el personal cuando la compra queda EFECTUADA (vTiger cf_994).
       estadoCompra: String(env('INVOICE_ESTADO_COMPRA', 'VENDIDO')).trim(),
+      // Status Logistico que dispara la facturacion en SalesOrder (vTiger cf_882).
+      triggerStatus: String(env('INVOICE_TRIGGER_STATUS', 'VERIFICADA')).trim(),
+      // Fecha minima obligatoria (estricta): nunca procesa hacia atras.
+      fechaMinima: String(env('INVOICE_FECHA_MINIMA', '2026-10-21')).trim(),
+      // Umbral comercial minimo: ordenes con total <= este monto se omiten (ej: $1.00 de CS / preautorizaciones).
+      montoMinimo: Math.max(envFloat('INVOICE_MIN_AMOUNT', 1.00), 0),
+      // Asuntos de orden autorizados para facturar (por defecto SOLO 'VENTA', excluye CUSTOMER, MUESTRA GRATIS, CHARGEBACK)
+      asuntosPermitidos: env('INVOICE_ALLOWED_SUBJECTS', 'VENTA')
+        .split(',')
+        .map(s => s.trim().toUpperCase())
+        .filter(Boolean),
       cursorPath: env('INVOICE_CURSOR_PATH', 'data/cursor.json'),
       // Traza por etapa de cada compra (base del monitor `report`).
       pipelinePath: env('INVOICE_PIPELINE_PATH', 'data/pipeline.jsonl')
+    },
+    reporte: {
+      dir: env('INVOICE_REPORT_DIR', 'data/reports'),
+      horaEnvio: envInt('INVOICE_DAILY_REPORT_HOUR', 23)
     },
     logs: {
       dir: env('INVOICE_LOG_DIR', 'data/logs')
@@ -104,6 +124,13 @@ export function configFactura() {
       // Si el PDF oficial falla, generar localmente en lugar de no publicar nada.
       fallbackPropio: envBool('INVOICE_PDF_FALLBACK_PROPIO', true)
     },
+    mensaje: {
+      // Si es true, el motor envia el SMS directamente via API de GHL.
+      // Si es false, se apoya en el workflow de GHL activado por el tag FACTURA_LISTA.
+      autoEnviar: envBool('INVOICE_AUTO_SEND_SMS', false),
+      tipo: String(env('INVOICE_MESSAGE_TYPE', 'SMS')).toUpperCase(),
+      plantilla: env('INVOICE_SMS_TEMPLATE', '')
+    },
     webhook: {
       // 'evento' = el CRM avisa (sin barrido). 'barrido' = recuperacion manual.
       trigger: String(env('INVOICE_TRIGGER', 'evento')).toLowerCase(),
@@ -111,6 +138,11 @@ export function configFactura() {
       // En plataformas como Render el puerto lo asigna la plataforma (variable PORT).
       // Se respeta ese valor; si no existe, se usa INVOICE_WEBHOOK_PORT (local).
       puerto: Math.min(Math.max(envInt('PORT', envInt('INVOICE_WEBHOOK_PORT', 3100)), 1), 65535)
+    },
+    marca: {
+      // Dominio propio de marca para acortar enlaces (ej: https://facturas.labnaturales.com)
+      dominio: String(env('INVOICE_SHORT_DOMAIN', 'https://facturas.labnaturales.com')).replace(/\/+$/, ''),
+      linksPath: env('INVOICE_LINKS_PATH', 'data/links.json')
     }
   };
 }

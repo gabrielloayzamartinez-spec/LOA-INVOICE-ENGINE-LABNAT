@@ -36,6 +36,11 @@ export const MOTIVOS_PUBLICACION = {
   YA_PUBLICADA: 'YA_PUBLICADA',
   ORDEN_SIN_NUMERO: 'ORDEN_SIN_NUMERO',
   ORDEN_SIN_ID: 'ORDEN_SIN_ID',
+  ORDEN_NO_VERIFICADA: 'ORDEN_NO_VERIFICADA',
+  ORDEN_TOTAL_INVALIDO: 'ORDEN_TOTAL_INVALIDO',
+  ORDEN_MONTO_NO_COMERCIAL: 'ORDEN_MONTO_NO_COMERCIAL',
+  ORDEN_ASUNTO_NO_FACTURABLE: 'ORDEN_ASUNTO_NO_FACTURABLE',
+  ORDEN_ANTERIOR_A_FECHA_CORTE: 'ORDEN_ANTERIOR_A_FECHA_CORTE',
   SIN_PDF: 'SIN_PDF'
 };
 
@@ -55,17 +60,66 @@ export function nombreArchivoFactura(numeroOrden = '') {
  * verdad. Si ya contiene el numero evaluado, NO se republica aunque el ciclo se
  * repita cien veces. Una recompra (numero distinto) SI se publica.
  *
- * @param {object}  orden         Orden normalizada (id, numeroOrden...).
- * @param {object}  estadoActual  Estado puente leido del contacto en GHL.
- * @param {string}  urlPdf        URL publica ya obtenida para esa orden.
- * @param {boolean} requerirPdf   `false` permite el CORTE TEMPRANO (decidir antes
- *                                de descargar el PDF). La validacion previa a
- *                                escribir en GHL siempre usa `true`.
+ * @param {object}  orden                     Orden normalizada (id, numeroOrden...).
+ * @param {object}  estadoActual              Estado puente leido del contacto en GHL.
+ * @param {string}  urlPdf                    URL publica ya obtenida para esa orden.
+ * @param {boolean} requerirPdf               `false` permite el CORTE TEMPRANO (decidir antes
+ *                                            de descargar el PDF). La validacion previa a
+ *                                            escribir en GHL siempre usa `true`.
+ * @param {string}  [estadoLogisticoRequerido] Status logistico requerido (ej: 'VERIFICADA').
+ * @param {string}  [fechaMinima]             Fecha minima permitida (ej: '2026-10-21').
+ * @param {number}  [montoMinimo]             Monto minimo facturable (ej: 1.00 para omitir <= $1.00).
+ * @param {string[]} [asuntosPermitidos]      Asuntos autorizados (ej: ['VENTA']).
  */
-export function decidirPublicacion({ orden = {}, estadoActual = {}, urlPdf = '', requerirPdf = true } = {}) {
+export function decidirPublicacion({
+  orden = {},
+  estadoActual = {},
+  urlPdf = '',
+  requerirPdf = true,
+  estadoLogisticoRequerido = null,
+  fechaMinima = null,
+  montoMinimo = null,
+  asuntosPermitidos = null
+} = {}) {
   const numeroOrden = String(orden.numeroOrden || '').trim();
   if (!numeroOrden) return { publicar: false, motivo: MOTIVOS_PUBLICACION.ORDEN_SIN_NUMERO };
   if (!String(orden.id || '').trim()) return { publicar: false, motivo: MOTIVOS_PUBLICACION.ORDEN_SIN_ID };
+
+  // CANDADO 1: Status Logistico
+  if (estadoLogisticoRequerido && orden.estadoLogistico && orden.estadoLogistico !== estadoLogisticoRequerido) {
+    return { publicar: false, motivo: MOTIVOS_PUBLICACION.ORDEN_NO_VERIFICADA };
+  }
+
+  // CANDADO 2: Total debe ser mayor a 0 (evita facturar ordenes canceladas en $0.00)
+  if (orden.total !== undefined && orden.total !== null && String(orden.total).trim() !== '') {
+    const totalNum = parseFloat(String(orden.total).replace(/[^0-9.-]/g, ''));
+    if (isNaN(totalNum) || totalNum <= 0) {
+      return { publicar: false, motivo: MOTIVOS_PUBLICACION.ORDEN_TOTAL_INVALIDO };
+    }
+  }
+
+  // CANDADO 2B: Umbral Comercial Minimo (excluye ordenes <= $1.00 de Customer Service / preautorizaciones)
+  if (montoMinimo !== null && montoMinimo !== undefined && orden.total !== undefined && orden.total !== null && String(orden.total).trim() !== '') {
+    const totalNum = parseFloat(String(orden.total).replace(/[^0-9.-]/g, ''));
+    if (!isNaN(totalNum) && totalNum <= montoMinimo) {
+      return { publicar: false, motivo: MOTIVOS_PUBLICACION.ORDEN_MONTO_NO_COMERCIAL };
+    }
+  }
+
+  // CANDADO 2C: Asunto Comercial (solo asuntos permitidos, ej: SOLO 'VENTA', omite CUSTOMER, MUESTRA GRATIS, etc.)
+  if (asuntosPermitidos && Array.isArray(asuntosPermitidos) && asuntosPermitidos.length && orden.asunto) {
+    const asuntoLimpio = String(orden.asunto).trim().toUpperCase();
+    const permitidos = asuntosPermitidos.map(a => String(a).trim().toUpperCase());
+    if (!permitidos.includes(asuntoLimpio)) {
+      return { publicar: false, motivo: MOTIVOS_PUBLICACION.ORDEN_ASUNTO_NO_FACTURABLE };
+    }
+  }
+
+  // CANDADO 3: Corte de Fecha (no procesar ordenes historicas hacia atras)
+  if (fechaMinima && orden.fecha && orden.fecha < fechaMinima) {
+    return { publicar: false, motivo: MOTIVOS_PUBLICACION.ORDEN_ANTERIOR_A_FECHA_CORTE };
+  }
+
   if (requerirPdf && !String(urlPdf || '').trim()) return { publicar: false, motivo: MOTIVOS_PUBLICACION.SIN_PDF };
 
   const yaPublicada = String(estadoActual.facturaNumeroOrden || '').trim();

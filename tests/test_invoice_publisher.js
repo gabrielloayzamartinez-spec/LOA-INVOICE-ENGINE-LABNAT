@@ -140,7 +140,7 @@ const r1 = await publicarFacturaDeContacto({
 });
 assert(r1.publicado === true, `El flujo completo termina publicado (motivo: ${r1.motivo})`);
 if (!r1.publicado) console.log(`    [DIAG] motivo=${r1.motivo} detalle=${r1.detalle} llamadas=${env1.llamadas.map(l => l.metodo + ' ' + l.url).join(' | ')}`);
-assert(r1.url === 'https://cdn.ghl.test/factura_G-04212158.pdf', 'Se publica la URL devuelta por la Media Library');
+assert((r1.urlCdn || r1.url) === 'https://cdn.ghl.test/factura_G-04212158.pdf', 'Se publica la URL devuelta por la Media Library');
 assert(env1.cuenta('module=Users&action=Login') === 1, 'Se loguea UNA vez en vTiger (la sesion web se reutiliza)');
 assert(env1.cuenta('action=ExportPDF') === 1, 'Se descarga el PDF OFICIAL una vez (Opcion A)');
 assert(env1.llamadas.some(l => /action=ExportPDF/.test(l.url) && /app=MARKETING/.test(l.url)), 'Usa la URL exacta de la UI (con app=MARKETING, sin la cual vTiger devuelve HTML)');

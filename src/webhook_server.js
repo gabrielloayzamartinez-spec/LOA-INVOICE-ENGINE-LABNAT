@@ -27,6 +27,7 @@
 
 import http from 'node:http';
 import { recordAuditEvent } from './core/audit.js';
+import { resolverDestinoFactura } from './core/short_links.js';
 
 const LIMITE_BYTES = 64 * 1024;
 
@@ -48,8 +49,10 @@ export function codigoHttpParaResultado(motivo = '') {
  * @param {object}   args
  * @param {Function} args.atender  (payload) => resultado de atenderEventoCompra
  * @param {string}   args.token    Token compartido obligatorio.
+ * @param {string}   [args.rutaLinks]
+ * @param {string}   [args.rutaPipeline]
  */
-export function crearServidorEventos({ atender, token } = {}) {
+export function crearServidorEventos({ atender, token, rutaLinks = 'data/links.json', rutaPipeline = 'data/pipeline.jsonl' } = {}) {
   if (typeof atender !== 'function') throw new TypeError('crearServidorEventos requiere atender(payload).');
 
   return http.createServer((req, res) => {
@@ -117,6 +120,44 @@ export function crearServidorEventos({ atender, token } = {}) {
       return;
     }
 
+    // ------------------------------------ REDIRECCION DE FACTURAS (MARCA)
+    if (req.method === 'GET' && url.pathname !== '/salud') {
+      const rutaLimpia = url.pathname.replace(/^\/+/, '').replace(/^f\//i, '').trim();
+      if (!rutaLimpia) {
+        return responder(200, { ok: true, servicio: 'loa-invoice-engine', mensaje: 'Portal de facturacion' });
+      }
+
+      const destinoUrl = resolverDestinoFactura(rutaLimpia, { rutaLinks, rutaPipeline });
+      if (destinoUrl) {
+        try {
+          recordAuditEvent({
+            type: 'INVOICE_PDF_VISUALIZADO',
+            severity: 'info',
+            message: `Cliente accedio al enlace de la factura: ${rutaLimpia}`
+          });
+        } catch {}
+
+        res.writeHead(302, {
+          Location: destinoUrl,
+          'Cache-Control': 'no-cache, no-store, must-revalidate'
+        });
+        return res.end();
+      }
+
+      res.writeHead(404, { 'content-type': 'text/html; charset=utf-8' });
+      return res.end(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Factura no encontrada</title><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+        <body style="font-family: sans-serif; text-align: center; padding: 40px; color: #333;">
+          <h2>Laboratorios Naturales</h2>
+          <p>La factura solicitada (<strong>${rutaLimpia}</strong>) no se encuentra disponible o esta siendo procesada.</p>
+          <p style="color: #888; font-size: 14px;">Si necesitas asistencia, comunicate con nuestro equipo de atencion.</p>
+        </body>
+        </html>
+      `);
+    }
+
     return responder(404, { ok: false, motivo: 'RUTA_DESCONOCIDA' });
   });
 }
@@ -124,8 +165,8 @@ export function crearServidorEventos({ atender, token } = {}) {
 /**
  * Levanta el servidor y devuelve la URL real (puerto efectivo si se pidio 0).
  */
-export function iniciarServidorEventos({ puerto = 3100, host = '0.0.0.0', atender, token } = {}) {
-  const server = crearServidorEventos({ atender, token });
+export function iniciarServidorEventos({ puerto = 3100, host = '0.0.0.0', atender, token, rutaLinks, rutaPipeline } = {}) {
+  const server = crearServidorEventos({ atender, token, rutaLinks, rutaPipeline });
   return new Promise((resolve, reject) => {
     server.once('error', reject);
     server.listen(puerto, host, () => {

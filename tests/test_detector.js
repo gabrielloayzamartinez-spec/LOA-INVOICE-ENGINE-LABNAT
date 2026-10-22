@@ -20,7 +20,7 @@ import path from 'path';
 import os from 'os';
 import {
   normalizarOrden, claveCursor, cargarCursor, guardarCursor, podarCursor,
-  detectarComprasNuevas, ejecutarCiclo, ORDEN_SELECT, COMPRADOR_SELECT
+  detectarComprasNuevas, detectarOrdenesVerificadas, ejecutarCiclo, ORDEN_SELECT, COMPRADOR_SELECT
 } from '../src/jobs/detectar_compras_nuevas.js';
 
 let passed = 0;
@@ -223,6 +223,44 @@ await ejecutarCiclo({
   ahora: new Date('2026-10-09T12:00:00Z')
 });
 assert(intentos8 === 2, 'Se reintenta la orden que fallo en el siguiente ciclo');
+
+// ------------------------------------------------------------------------------
+console.log('\n[TEST 8] Deteccion de ordenes verificadas directamente en SalesOrder (cf_882)');
+const ordenesVerificadas = [
+  { id: '6x101', salesorder_no: 'S-101', subject: 'VENTA', contact_id: '12x101', createdtime: '2026-10-21 10:00:00', hdnGrandTotal: '150', cf_882: 'VERIFICADA', cf_1006: '3055551111', cf_3127: 'PALACIOS', cf_856: 'CARLOS', cf_858: 'GOMEZ' },
+  { id: '6x102', salesorder_no: 'S-102', subject: 'VENTA', contact_id: '12x102', createdtime: '2026-10-21 11:00:00', hdnGrandTotal: '200', cf_882: 'VERIFICADA', cf_1006: '3055552222', cf_3127: 'BENAVIDES', cf_856: 'ANA', cf_858: 'RUIZ' },
+  { id: '6x103', salesorder_no: 'S-103', subject: 'VENTA', contact_id: '12x103', createdtime: '2026-10-21 11:30:00', hdnGrandTotal: '1.00', cf_882: 'VERIFICADA', cf_1006: '3055553333', cf_3127: 'PALACIOS', cf_856: 'CS', cf_858: 'AJUSTE' },
+  { id: '6x104', salesorder_no: 'S-104', subject: 'CUSTOMER', contact_id: '12x104', createdtime: '2026-10-21 12:00:00', hdnGrandTotal: '150', cf_882: 'VERIFICADA', cf_1006: '3055554444', cf_3127: 'PALACIOS', cf_856: 'CS', cf_858: 'TICKET' }
+];
+
+const vtVerif = {
+  consultas: [],
+  async consultar(sql) {
+    this.consultas.push(sql);
+    return ordenesVerificadas;
+  }
+};
+
+const cursorVerif = { procesadas: {} };
+const detVerif = await detectarOrdenesVerificadas({
+  clienteVtiger: vtVerif,
+  fechaMinima: '2026-10-21',
+  cursor: cursorVerif,
+  montoMinimo: 1.00,
+  asuntosPermitidos: ['VENTA'],
+  buscarContactoGhl: async (tel) => (tel ? `ghl-${tel}` : null)
+});
+
+assert(detVerif.revisados === 4, 'Revisa las 4 ordenes');
+assert(detVerif.candidatos.length === 2, 'Genera 2 candidatos (omite la orden de $1.00 y la de CUSTOMER)');
+assert(detVerif.omitidos.some(o => o.motivo === 'ORDEN_MONTO_NO_COMERCIAL' && o.numeroOrden === 'S-103'), 'La orden de $1.00 fue omitida con motivo ORDEN_MONTO_NO_COMERCIAL');
+assert(detVerif.omitidos.some(o => o.motivo === 'ORDEN_ASUNTO_NO_FACTURABLE' && o.numeroOrden === 'S-104'), 'La orden con asunto CUSTOMER fue omitida con motivo ORDEN_ASUNTO_NO_FACTURABLE');
+assert(detVerif.candidatos[0].orden.numeroOrden === 'S-101', 'Orden 1 correcta');
+assert(detVerif.candidatos[0].telefono === '3055551111', 'Extrae telefono directamente de SalesOrder');
+assert(detVerif.candidatos[0].sede === 'PALACIOS', 'Extrae sede de la orden');
+assert(detVerif.candidatos[0].contactId === 'ghl-3055551111', 'Resuelve contactId de GHL por telefono');
+assert(vtVerif.consultas[0].includes("cf_882 = 'VERIFICADA'"), "Filtra por cf_882 = 'VERIFICADA'");
+assert(vtVerif.consultas[0].includes("createdtime >= '2026-10-21 00:00:00'"), 'Filtra fechaMinima en la consulta');
 
 // ------------------------------------------------------------------------------
 try { fs.rmSync(DIR, { recursive: true, force: true }); } catch { /* limpieza best-effort */ }

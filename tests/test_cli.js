@@ -106,6 +106,12 @@ assert(/INVOICE_WEBHOOK_TOKEN|Faltan variables/.test(r6.salida), 'Indica que fal
 assert(!/Escuchando en/.test(r6.salida), 'No llega a levantar el endpoint');
 
 // ------------------------------------------------------------------------------
+console.log('\n[TEST 7] `report-diario` sin credenciales: avisa y se detiene limpiamente');
+const r7 = correr(['report-diario'], envMinimo());
+assert(r7.code === 0, `Termina con codigo 0 (recibido: ${r7.code})`);
+assert(/Faltan variables|STOP/.test(r7.salida), 'Informa que faltan variables');
+
+// ------------------------------------------------------------------------------
 try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* limpieza best-effort */ }
 
 console.log('\n==========================================================');

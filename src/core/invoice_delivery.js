@@ -24,6 +24,7 @@ import {
   decidirPublicacion, construirPuenteFactura, leerEstadoPuenteFactura,
   nombreArchivoFactura, MOTIVOS_PUBLICACION
 } from './invoice_bridge.js';
+import { guardarEnlaceFactura, construirUrlBranded } from './short_links.js';
 
 /** Resultados posibles del caso de uso. */
 export const MOTIVOS_ENTREGA = {
@@ -60,9 +61,15 @@ export async function entregarFacturaDeOrden({
   habilitado = null,
   sede = null,
   pipeline = null,
-  pipelineArchivo = 'data/pipeline.jsonl'
+  pipelineArchivo = 'data/pipeline.jsonl',
+  estadoLogisticoRequerido = null,
+  fechaMinima = null,
+  montoMinimo = null,
+  asuntosPermitidos = null,
+  dominioMarca = null,
+  rutaLinks = 'data/links.json'
 } = {}) {
-  const resultado = { publicado: false, motivo: null, url: null, numeroOrden: null, fileId: null, detalle: null, pasos: [] };
+  const resultado = { publicado: false, motivo: null, url: null, urlCdn: null, numeroOrden: null, fileId: null, detalle: null, pasos: [] };
 
   // Traza por etapa (base del monitor por sede). Nunca detiene el flujo.
   const marcarPipeline = (estado, extra = {}) => {
@@ -91,9 +98,17 @@ export async function entregarFacturaDeOrden({
 
   // 2. CORTE TEMPRANO: idempotencia ANTES de gastar trabajo y cuota.
   const estado = leerEstadoPuenteFactura(contactoGhl, fieldIds);
-  const previo = decidirPublicacion({ orden, estadoActual: estado, requerirPdf: false });
+  const previo = decidirPublicacion({
+    orden,
+    estadoActual: estado,
+    requerirPdf: false,
+    estadoLogisticoRequerido,
+    fechaMinima,
+    montoMinimo,
+    asuntosPermitidos
+  });
   if (!previo.publicar) {
-    const motivo = previo.motivo === MOTIVOS_PUBLICACION.YA_PUBLICADA ? MOTIVOS_ENTREGA.YA_PUBLICADA : MOTIVOS_ENTREGA.ORDEN_INVALIDA;
+    const motivo = previo.motivo === MOTIVOS_PUBLICACION.YA_PUBLICADA ? MOTIVOS_ENTREGA.YA_PUBLICADA : previo.motivo;
     marcarPipeline('OMITIDO', { motivo: previo.motivo });
     return { ...resultado, motivo, detalle: previo.motivo };
   }
@@ -133,18 +148,45 @@ export async function entregarFacturaDeOrden({
     });
     return { ...resultado, motivo: MOTIVOS_ENTREGA.MEDIA_NO_DISPONIBLE, detalle: subida?.motivo || subida?.detalle || null, pasos: [...resultado.pasos, 'media_fallida'] };
   }
-  resultado.url = subida.url;
+
+  // Si hay dominio de marca configurado, persistimos en el acortador y usamos la URL corta
+  let urlEfectiva = subida.url;
+  if (dominioMarca) {
+    try {
+      guardarEnlaceFactura({
+        numeroOrden: resultado.numeroOrden,
+        urlDestino: subida.url,
+        ruta: rutaLinks
+      });
+      const branded = construirUrlBranded({
+        baseDominio: dominioMarca,
+        numeroOrden: resultado.numeroOrden
+      });
+      if (branded) urlEfectiva = branded;
+    } catch {}
+  }
+
+  resultado.url = urlEfectiva;
+  resultado.urlCdn = subida.url;
   resultado.fileId = subida.fileId || null;
   resultado.pasos.push('media_ok');
-  marcarPipeline('PUBLICADO', { url: subida.url });
+  marcarPipeline('PUBLICADO', { url: urlEfectiva, urlCdn: subida.url });
 
   // 5. Validacion FINAL con la URL real.
-  const final = decidirPublicacion({ orden, estadoActual: estado, urlPdf: subida.url });
+  const final = decidirPublicacion({
+    orden,
+    estadoActual: estado,
+    urlPdf: subida.url,
+    estadoLogisticoRequerido,
+    fechaMinima,
+    montoMinimo,
+    asuntosPermitidos
+  });
   if (!final.publicar) {
     return { ...resultado, motivo: MOTIVOS_ENTREGA.YA_PUBLICADA, detalle: final.motivo, pasos: [...resultado.pasos, 'validacion_final_bloqueo'] };
   }
 
-  const puente = construirPuenteFactura({ urlPdf: subida.url, numeroOrden: resultado.numeroOrden, fieldIds });
+  const puente = construirPuenteFactura({ urlPdf: urlEfectiva, numeroOrden: resultado.numeroOrden, fieldIds });
   if (!puente.customFields.length) {
     return { ...resultado, motivo: MOTIVOS_ENTREGA.DEPS_INCOMPLETAS, detalle: 'No se resolvio ningun campo puente en la location destino.', pasos: [...resultado.pasos, 'sin_campos'] };
   }
@@ -152,7 +194,15 @@ export async function entregarFacturaDeOrden({
   // 6. Escritura del puente (dispara el workflow de GHL).
   let escritura = null;
   try {
-    escritura = await deps.escribirContacto({ contactId, customFields: puente.customFields, tags: puente.tags, orden, url: subida.url });
+    escritura = await deps.escribirContacto({
+      contactId,
+      customFields: puente.customFields,
+      tags: puente.tags,
+      orden,
+      url: urlEfectiva,
+      urlCdn: subida.url,
+      contactoGhl
+    });
   } catch (e) {
     escritura = { ok: false, detalle: e.message };
   }

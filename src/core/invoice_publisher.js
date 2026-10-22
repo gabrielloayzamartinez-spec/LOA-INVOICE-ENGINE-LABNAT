@@ -19,8 +19,10 @@ import { ghlFetch } from '../connectors/ghl_client.js';
 import { crearClienteSesionWeb } from '../connectors/vtiger_web_session.js';
 import { subirPdfAMediaLibrary, baseGhl } from '../connectors/ghl_media.js';
 import { entregarFacturaDeOrden } from './invoice_delivery.js';
-import { CLAVES_PUENTE_FACTURA } from './invoice_bridge.js';
+import { CLAVES_PUENTE_FACTURA, TAG_FACTURA_ENVIADA } from './invoice_bridge.js';
 import { generarFacturaPdf, contactoParaInvoice, EMPRESA_POR_DEFECTO } from './invoice_render.js';
+import { enviarMensajeFacturaGhl, construirTextoMensaje } from '../connectors/ghl_messages.js';
+import { recordAuditEvent } from './audit.js';
 
 /** Nombres EXACTOS de los campos puente en GHL. */
 export const NOMBRES_CAMPOS_FACTURA = {
@@ -179,11 +181,49 @@ export function crearDepsFactura({ apiKeyCentral, locationIdCentral, fetchImpl =
       fetchImpl
     }),
 
-    escribirContacto: async ({ contactId, customFields, tags }) => {
+    escribirContacto: async ({ contactId, customFields, tags, orden, url, contactoGhl }) => {
       const campos = await escribirCamposPuente(contactId, customFields, { headers, fetchImpl });
       if (!campos.ok) return { ok: false, detalle: `customFields: ${campos.detalle || campos.status}` };
       const etiquetas = await agregarTagsContacto(contactId, tags, { headers, fetchImpl });
       if (!etiquetas.ok) return { ok: false, detalle: `tags: ${etiquetas.detalle || etiquetas.status}` };
+
+      // Envio directo por API de GHL (si esta configurado INVOICE_AUTO_SEND_SMS=true)
+      const cfgActual = configFactura();
+      if (cfgActual.mensaje?.autoEnviar && url) {
+        const nombre = contactoGhl?.firstName || contactoGhl?.contactName || contactoGhl?.name || 'cliente';
+        const texto = construirTextoMensaje({
+          nombre,
+          numeroOrden: orden?.numeroOrden || '',
+          urlPdf: url,
+          plantilla: cfgActual.mensaje.plantilla
+        });
+        const msgRes = await enviarMensajeFacturaGhl({
+          contactId,
+          mensaje: texto,
+          apiKey: apiKeyCentral,
+          tipo: cfgActual.mensaje.tipo || 'SMS',
+          fetchImpl
+        });
+        if (msgRes.ok) {
+          await agregarTagsContacto(contactId, [TAG_FACTURA_ENVIADA], { headers, fetchImpl });
+          try {
+            recordAuditEvent({
+              type: 'INVOICE_SMS_ENVIADO',
+              severity: 'info',
+              message: `SMS de factura ${orden?.numeroOrden || ''} enviado al cliente (messageId: ${msgRes.messageId})`
+            });
+          } catch {}
+        } else {
+          try {
+            recordAuditEvent({
+              type: 'INVOICE_SMS_FALLIDO',
+              severity: 'warn',
+              message: `Fallo envio directo de SMS para ${orden?.numeroOrden || ''}: ${msgRes.detalle || msgRes.motivo}`
+            });
+          } catch {}
+        }
+      }
+
       return { ok: true, detalle: null };
     }
   };
@@ -202,11 +242,23 @@ export async function publicarFacturaDeContacto({
   sede = null,
   habilitado = null,
   fetchImpl = null,
-  deps = null
+  deps = null,
+  estadoLogisticoRequerido = null,
+  fechaMinima = null,
+  montoMinimo = null,
+  asuntosPermitidos = null,
+  dominioMarca = null,
+  rutaLinks = null
 } = {}) {
   const cfg = configFactura();
   const apiKey = apiKeyCentral || cfg.ghl.apiKeyCentral;
   const locationId = locationIdCentral || cfg.ghl.locationIdCentral;
+  const estadoLogistico = estadoLogisticoRequerido ?? cfg.escaneo?.triggerStatus;
+  const fechaCorte = fechaMinima ?? cfg.escaneo?.fechaMinima;
+  const montoMin = montoMinimo ?? cfg.escaneo?.montoMinimo;
+  const asuntos = asuntosPermitidos ?? cfg.escaneo?.asuntosPermitidos;
+  const dominioEfectivo = dominioMarca !== null ? dominioMarca : cfg.marca?.dominio;
+  const linksEfectivos = rutaLinks !== null ? rutaLinks : cfg.marca?.linksPath;
 
   if (!contactId) return { publicado: false, motivo: 'SIN_CONTACTO', url: null, numeroOrden: null, fileId: null, detalle: null, pasos: [] };
   if (!apiKey || !locationId) {
@@ -240,6 +292,12 @@ export async function publicarFacturaDeContacto({
     fieldIds: ids,
     deps: depsEfectivas,
     habilitado,
-    sede
+    sede,
+    estadoLogisticoRequerido: estadoLogistico,
+    fechaMinima: fechaCorte,
+    montoMinimo: montoMin,
+    asuntosPermitidos: asuntos,
+    dominioMarca: dominioEfectivo,
+    rutaLinks: linksEfectivos
   });
 }

@@ -33,6 +33,12 @@ services:
         sync: false
       - key: VTIGER_ACCESS_KEY
         sync: false
+      - key: VTIGER_WEB_USERNAME
+        sync: false
+      - key: VTIGER_WEB_PASSWORD
+        sync: false
+      - key: INVOICE_PDF_SOURCE
+        value: vtiger
 
       # --- GHL Cuenta Empresa ---
       - key: GHL_API_KEY_CENTRAL
@@ -42,21 +48,37 @@ services:
       - key: GHL_BASE_URL
         value: https://services.leadconnectorhq.com
 
-      # --- Disparador y deteccion ---
+      # --- Disparador y deteccion fail-safe ---
       - key: INVOICE_TRIGGER
         value: evento
       - key: INVOICE_WEBHOOK_TOKEN
         sync: false
       - key: INVOICE_SCAN_SEDE
-        value: PALACIOS
+        value: TODAS
       - key: INVOICE_ESTADO_COMPRA
         value: VENDIDO
+      - key: INVOICE_TRIGGER_STATUS
+        value: VERIFICADA
+      - key: INVOICE_FECHA_MINIMA
+        value: "2026-10-21"
+      - key: INVOICE_MIN_AMOUNT
+        value: "1.00"
+      - key: INVOICE_ALLOWED_SUBJECTS
+        value: VENTA
+
+      # --- Dominio de Marca para Facturas ---
+      - key: INVOICE_SHORT_DOMAIN
+        value: https://facturas.labnaturales.com
+      - key: INVOICE_LINKS_PATH
+        value: /var/data/links.json
 
       # --- Estado persistente (el cursor vive en data/cursor.json) ---
       - key: INVOICE_CURSOR_PATH
         value: /var/data/cursor.json
       - key: INVOICE_LOG_DIR
         value: /var/data/logs
+      - key: INVOICE_PIPELINE_PATH
+        value: /var/data/pipeline.jsonl
 
 # Disco persistente: sin el, el cursor se pierde en cada deploy (no es critico:
 # el campo `Factura Nº Orden` de GHL sigue evitando duplicados, pero se pierde

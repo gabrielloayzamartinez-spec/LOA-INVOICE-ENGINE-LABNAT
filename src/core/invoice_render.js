@@ -110,9 +110,9 @@ export function contactoParaInvoice({ contacto = {}, orden = {} } = {}) {
   const o = orden || {};
 
   return {
-    firstname: c.firstname || c.firstName || '',
-    lastname: c.lastname || c.lastName || '',
-    phone: String(c.phone || c.mobile || c.homephone || '').trim(),
+    firstname: c.firstname || c.firstName || o.nombreCliente || o.cf_856 || '',
+    lastname: c.lastname || c.lastName || o.apellidoCliente || o.cf_858 || '',
+    phone: String(c.phone || c.mobile || c.homephone || o.telefono || o.cf_1006 || '').trim(),
     cf_870: String(o.direccion || c.cf_870 || c.address1 || '').trim(),
     cf_872: String(o.zip || c.cf_872 || c.postalCode || '').trim(),
     cf_876: String(o.ciudad || c.cf_876 || c.city || '').trim(),

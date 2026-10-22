@@ -232,7 +232,7 @@ const r1 = await publicarFacturaDeContacto({
 });
 
 assert(r1.publicado === true, `La factura se publica (motivo: ${r1.motivo})`);
-assert(r1.url === `http://127.0.0.1:${puertoGhl}/cdn/factura.pdf`, 'Devuelve la URL publica real del servidor');
+assert((r1.urlCdn || r1.url) === `http://127.0.0.1:${puertoGhl}/cdn/factura.pdf`, 'Devuelve la URL publica real del servidor');
 assert(r1.fileId === 'file_e2e', 'Devuelve el fileId de la Media Library');
 // OPCION A: el PDF es el OFICIAL de vTiger (accion ExportPDF como la usa la UI).
 assert(vt.estado.logins === 1, `Se loguea UNA vez en vTiger (sesion reutilizada; recibido: ${vt.estado.logins})`);

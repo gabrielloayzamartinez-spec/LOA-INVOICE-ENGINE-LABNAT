@@ -186,6 +186,45 @@ try { crearServidorEventos({ token: TOKEN }); } catch (e) { lanzo = e instanceof
 assert(lanzo, 'Sin atender() lanza TypeError (error de programacion, no de runtime)');
 
 // ------------------------------------------------------------------------------
+console.log('\n[TEST 9] Validaciones de corte de fecha y estado logistico (VERIFICADA)');
+const ordenesVariadas = {
+  '6xNoVerif': [{ id: '6xNoVerif', salesorder_no: 'S-NO-VERIF', contact_id: '12x1', createdtime: '2026-10-21 10:00:00', cf_882: 'CONFIRMADA' }],
+  '6xVieja': [{ id: '6xVieja', salesorder_no: 'S-VIEJA', contact_id: '12x1', createdtime: '2026-10-15 10:00:00', cf_882: 'VERIFICADA' }],
+  '6xOk': [{ id: '6xOk', salesorder_no: 'S-OK', contact_id: '12x1', createdtime: '2026-10-21 15:00:00', cf_882: 'VERIFICADA' }]
+};
+const vt9 = crearVtigerFalso({ ordenes: ordenesVariadas });
+
+// 1. Rechaza orden que no esta VERIFICADA
+const rNoVerif = await atenderEventoCompra({
+  payload: { salesorder_id: '6xNoVerif' },
+  clienteVtiger: vt9,
+  filtroEstadoLogistico: 'VERIFICADA',
+  fechaMinima: '2026-10-21'
+});
+assert(rNoVerif.ok === false && rNoVerif.motivo === 'ORDEN_NO_VERIFICADA', 'Rechaza orden con status != VERIFICADA');
+
+// 2. Rechaza orden creada antes de la fecha minima (no procesa hacia atras)
+const rVieja = await atenderEventoCompra({
+  payload: { salesorder_id: '6xVieja' },
+  clienteVtiger: vt9,
+  filtroEstadoLogistico: 'VERIFICADA',
+  fechaMinima: '2026-10-21'
+});
+assert(rVieja.ok === false && rVieja.motivo === 'ORDEN_ANTERIOR_A_FECHA_CORTE', 'Rechaza orden anterior a fechaMinima (no procesa retroactivo)');
+
+// 3. Acepta orden verificada de hoy
+const pub9 = crearPublicar();
+const rOk = await atenderEventoCompra({
+  payload: { salesorder_id: '6xOk' },
+  clienteVtiger: vt9,
+  filtroEstadoLogistico: 'VERIFICADA',
+  fechaMinima: '2026-10-21',
+  publicar: pub9.fn,
+  buscarContactoGhl: async () => 'ghl-ok'
+});
+assert(rOk.ok === true && rOk.motivo === 'PUBLICADA', 'Acepta y publica orden verificada creada hoy');
+
+// ------------------------------------------------------------------------------
 console.log('\n==========================================================');
 console.log(` RESULTADO: ${passed} PASS / ${failed} FAIL`);
 console.log('==========================================================\n');

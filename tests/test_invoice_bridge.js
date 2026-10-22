@@ -142,6 +142,91 @@ assert(cierre.agregar.includes(TAG_FACTURA_ENVIADA), `Agrega ${TAG_FACTURA_ENVIA
 assert(cierre.quitar.includes(TAG_FACTURA_LISTA), `Quita ${TAG_FACTURA_LISTA} (evita re-disparo del workflow)`);
 
 // ------------------------------------------------------------------------------
+console.log('\n[TEST 11] Candados de seguridad: status no verificado, total cero y fecha anterior');
+const noVerificada = decidirPublicacion({
+  orden: { ...ORDEN, estadoLogistico: 'CONFIRMADA' },
+  estadoActual: {},
+  urlPdf: URL_PDF,
+  estadoLogisticoRequerido: 'VERIFICADA'
+});
+assert(noVerificada.publicar === false && noVerificada.motivo === MOTIVOS_PUBLICACION.ORDEN_NO_VERIFICADA, 'Rechaza orden no verificada (ORDEN_NO_VERIFICADA)');
+
+const totalCero = decidirPublicacion({
+  orden: { ...ORDEN, total: '0.00' },
+  estadoActual: {},
+  urlPdf: URL_PDF
+});
+assert(totalCero.publicar === false && totalCero.motivo === MOTIVOS_PUBLICACION.ORDEN_TOTAL_INVALIDO, 'Rechaza orden con total <= 0 (ORDEN_TOTAL_INVALIDO)');
+
+const fechaVieja = decidirPublicacion({
+  orden: { ...ORDEN, fecha: '2026-10-15' },
+  estadoActual: {},
+  urlPdf: URL_PDF,
+  fechaMinima: '2026-10-21'
+});
+assert(fechaVieja.publicar === false && fechaVieja.motivo === MOTIVOS_PUBLICACION.ORDEN_ANTERIOR_A_FECHA_CORTE, 'Rechaza orden anterior a fechaMinima (ORDEN_ANTERIOR_A_FECHA_CORTE)');
+
+// ------------------------------------------------------------------------------
+console.log('\n[TEST 12] Candado de monto comercial: ordenes <= $1.00 de Customer Service');
+const ordenUnDolar = decidirPublicacion({
+  orden: { ...ORDEN, total: '1.00' },
+  estadoActual: {},
+  urlPdf: URL_PDF,
+  montoMinimo: 1.00
+});
+assert(ordenUnDolar.publicar === false && ordenUnDolar.motivo === MOTIVOS_PUBLICACION.ORDEN_MONTO_NO_COMERCIAL, 'Omite orden de $1.00 de CS (ORDEN_MONTO_NO_COMERCIAL)');
+
+const ordenCentavos = decidirPublicacion({
+  orden: { ...ORDEN, total: '0.99' },
+  estadoActual: {},
+  urlPdf: URL_PDF,
+  montoMinimo: 1.00
+});
+assert(ordenCentavos.publicar === false && ordenCentavos.motivo === MOTIVOS_PUBLICACION.ORDEN_MONTO_NO_COMERCIAL, 'Omite orden de $0.99 (ORDEN_MONTO_NO_COMERCIAL)');
+
+const ordenValida = decidirPublicacion({
+  orden: { ...ORDEN, total: '1.50' },
+  estadoActual: {},
+  urlPdf: URL_PDF,
+  montoMinimo: 1.00
+});
+assert(ordenValida.publicar === true, 'Permite orden comercial > $1.00');
+
+// ------------------------------------------------------------------------------
+console.log('\n[TEST 13] Candado de Asunto: solo VENTA autorizada (omite CUSTOMER, MUESTRA GRATIS, CHARGEBACK)');
+const ordenVenta = decidirPublicacion({
+  orden: { ...ORDEN, asunto: 'VENTA', total: '150.00' },
+  estadoActual: {},
+  urlPdf: URL_PDF,
+  asuntosPermitidos: ['VENTA']
+});
+assert(ordenVenta.publicar === true, 'Permite orden con asunto VENTA');
+
+const ordenCustomer = decidirPublicacion({
+  orden: { ...ORDEN, asunto: 'CUSTOMER', total: '150.00' },
+  estadoActual: {},
+  urlPdf: URL_PDF,
+  asuntosPermitidos: ['VENTA']
+});
+assert(ordenCustomer.publicar === false && ordenCustomer.motivo === MOTIVOS_PUBLICACION.ORDEN_ASUNTO_NO_FACTURABLE, 'Omite orden con asunto CUSTOMER');
+
+const ordenMuestra = decidirPublicacion({
+  orden: { ...ORDEN, asunto: 'MUESTRA GRATIS', total: '150.00' },
+  estadoActual: {},
+  urlPdf: URL_PDF,
+  asuntosPermitidos: ['VENTA']
+});
+assert(ordenMuestra.publicar === false && ordenMuestra.motivo === MOTIVOS_PUBLICACION.ORDEN_ASUNTO_NO_FACTURABLE, 'Omite orden con asunto MUESTRA GRATIS');
+
+const ordenChargeback = decidirPublicacion({
+  orden: { ...ORDEN, asunto: 'CHARGEBACK', total: '150.00' },
+  estadoActual: {},
+  urlPdf: URL_PDF,
+  asuntosPermitidos: ['VENTA']
+});
+assert(ordenChargeback.publicar === false && ordenChargeback.motivo === MOTIVOS_PUBLICACION.ORDEN_ASUNTO_NO_FACTURABLE, 'Omite orden con asunto CHARGEBACK');
+
+// ------------------------------------------------------------------------------
 console.log('\n==========================================================');
 console.log(` RESULTADO: ${passed} PASS / ${failed} FAIL`);
 console.log('==========================================================\n');

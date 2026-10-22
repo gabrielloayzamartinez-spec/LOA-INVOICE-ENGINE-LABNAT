@@ -31,9 +31,10 @@ import { ghlFetch } from './connectors/ghl_client.js';
 import { publicarFacturaDeContacto, headersCentral } from './core/invoice_publisher.js';
 import { generarFacturaPdf, construirModeloInvoice, nombreArchivoInvoice, EMPRESA_POR_DEFECTO, contactoParaInvoice } from './core/invoice_render.js';
 import { compararInvoiceConVtiger, formatearVerificacion } from './core/invoice_verify.js';
-import { cargarCursor, guardarCursor, podarCursor, ejecutarCiclo, normalizarOrden, ORDEN_SELECT } from './jobs/detectar_compras_nuevas.js';
+import { cargarCursor, guardarCursor, podarCursor, ejecutarCiclo, normalizarOrden, ORDEN_SELECT, detectarOrdenesVerificadas } from './jobs/detectar_compras_nuevas.js';
 import { atenderEventoCompra } from './jobs/atender_evento.js';
 import { iniciarServidorEventos } from './webhook_server.js';
+import { generarReporteDiario } from './core/daily_report.js';
 
 cargarEnv();
 const cfg = configFactura();
@@ -56,22 +57,37 @@ function clienteVtiger() {
   return crearClienteVtiger({ url: cfg.vtiger.url, username: cfg.vtiger.username, accessKey: cfg.vtiger.accessKey });
 }
 
-/** Busca el contacto en GHL por telefono (lookup). Devuelve el id o null. */
+/** Busca el contacto en GHL por telefono (query / search). Devuelve el id o null. */
 async function buscarContactoGhl(telefono, { fetchImpl = null } = {}) {
   if (!telefono) return null;
   const headers = headersCentral(cfg.ghl.apiKeyCentral);
-  const url = `${cfg.ghl.baseUrl}/contacts/lookup?locationId=${encodeURIComponent(cfg.ghl.locationIdCentral)}&phone=${encodeURIComponent(telefono)}`;
   const enviar = fetchImpl || ((u, o) => ghlFetch(u, o, 1, 'InvoiceLookup'));
 
-  try {
-    const res = await enviar(url, { method: 'GET', headers });
-    const texto = await (res.text ? res.text().catch(() => '') : Promise.resolve(''));
-    if (!res.ok) return null;
-    const cuerpo = JSON.parse(texto);
-    return cuerpo?.contact?.id || cuerpo?.contacts?.[0]?.id || null;
-  } catch {
-    return null;
+  const digitos = String(telefono).replace(/\D/g, '');
+  const variantes = [
+    telefono.trim(),
+    digitos,
+    digitos.length === 10 ? `+1${digitos}` : (digitos.startsWith('1') && digitos.length === 11 ? `+${digitos}` : null),
+    digitos.length === 11 && digitos.startsWith('1') ? digitos.slice(1) : null
+  ].filter(Boolean);
+
+  const unicos = [...new Set(variantes)];
+
+  for (const query of unicos) {
+    try {
+      const url = `${cfg.ghl.baseUrl}/contacts/?locationId=${encodeURIComponent(cfg.ghl.locationIdCentral)}&query=${encodeURIComponent(query)}`;
+      const res = await enviar(url, { method: 'GET', headers });
+      const texto = await (res.text ? res.text().catch(() => '') : Promise.resolve(''));
+      if (!res.ok) continue;
+      const cuerpo = JSON.parse(texto);
+      const contactId = cuerpo?.contacts?.[0]?.id || cuerpo?.contact?.id || null;
+      if (contactId) return contactId;
+    } catch {
+      /* prueba la siguiente variante */
+    }
   }
+
+  return null;
 }
 
 // ------------------------------------------------------------------------------
@@ -162,7 +178,7 @@ async function comandoPreview() {
 
   const vt = clienteVtiger();
   const filas = await vt.consultar(
-    `SELECT id, salesorder_no, contact_id, createdtime, hdnGrandTotal, sostatus, cf_1069, cf_3156, cf_3298, quantity, cf_870, cf_872, cf_876, cf_1053 FROM SalesOrder WHERE id = '${String(record).replace(/'/g, '')}' LIMIT 1`
+    `SELECT id, salesorder_no, contact_id, createdtime, hdnGrandTotal, sostatus, cf_1069, cf_3156, quantity, cf_870, cf_872, cf_876, cf_1053 FROM SalesOrder WHERE id = '${String(record).replace(/'/g, '')}' LIMIT 1`
   );
   if (!filas.length) return linea(`No se encontro la orden ${record} en vTiger.`);
 
@@ -243,15 +259,24 @@ async function comandoServe() {
     payload,
     clienteVtiger: vt,
     sede: cfg.escaneo.sede,
+    filtroEstadoLogistico: cfg.escaneo.triggerStatus || 'VERIFICADA',
+    fechaMinima: cfg.escaneo.fechaMinima || '2026-10-21',
     buscarContactoGhl: (tel) => buscarContactoGhl(tel)
   });
 
   const puerto = port ? Number(port) : cfg.webhook.puerto;
-  const { url } = await iniciarServidorEventos({ puerto, atender, token: cfg.webhook.token });
+  const { url } = await iniciarServidorEventos({
+    puerto,
+    atender,
+    token: cfg.webhook.token,
+    rutaLinks: cfg.marca?.linksPath || 'data/links.json',
+    rutaPipeline: cfg.escaneo?.pipelinePath || 'data/pipeline.jsonl'
+  });
 
   linea('');
   linea(`  Escuchando en : ${url}`);
   linea(`  Salud         : GET  ${url}/salud`);
+  linea(`  Factura (GET) : ${url}/:numeroOrden   (ej: ${url}/S-97576)`);
   linea(`  Evento (POST) : ${url}/evento/compra   (header: x-loa-token)`);
   linea('');
   linea('  Este endpoint NO barre la base: recibe UNA venta y publica ESA factura.');
@@ -261,19 +286,28 @@ async function comandoServe() {
 // ------------------------------------------------------------------------------
 // COMANDOS: once / scan  (MODO RECUPERACION — barrido)
 // ------------------------------------------------------------------------------
-async function unCiclo({ cursor, rutaCursor }) {
+async function unCiclo({ cursor, rutaCursor, sedeOverride = null, diasOverride = null, loteOverride = null } = {}) {
   const vt = clienteVtiger();
+  const sedeEfectiva = sedeOverride !== null && sedeOverride !== undefined ? String(sedeOverride).toUpperCase() : cfg.escaneo.sede;
+  const diasEfectivos = diasOverride !== null && diasOverride !== undefined ? Number(diasOverride) : cfg.escaneo.dias;
+  const loteEfectivo = loteOverride !== null && loteOverride !== undefined ? Number(loteOverride) : cfg.escaneo.lote;
+
+  const modoDeteccion = cfg.escaneo.triggerStatus === 'VERIFICADA' ? 'ordenes_verificadas' : 'contactos_compradores';
+
   const resumen = await ejecutarCiclo({
     clienteVtiger: vt,
     publicar: (candidato) => publicarFacturaDeContacto({
       contactId: candidato.contactId,
       orden: candidato.orden,
-      sede: cfg.escaneo.sede
+      sede: candidato.sede || sedeEfectiva
     }),
     cursor,
-    sede: cfg.escaneo.sede,
-    dias: cfg.escaneo.dias,
-    lote: cfg.escaneo.lote,
+    sede: sedeEfectiva,
+    dias: diasEfectivos,
+    lote: loteEfectivo,
+    modoDeteccion,
+    fechaMinima: cfg.escaneo.fechaMinima || '2026-10-21',
+    estadoLogistico: cfg.escaneo.triggerStatus || 'VERIFICADA',
     estadoCompra: cfg.escaneo.estadoCompra,
     buscarContactoGhl: (tel) => buscarContactoGhl(tel)
   });
@@ -282,26 +316,28 @@ async function unCiclo({ cursor, rutaCursor }) {
   const guardado = guardarCursor(rutaCursor, podado);
 
   linea(`\nRevisados: ${resumen.deteccion.revisados} | Candidatos: ${resumen.deteccion.candidatos.length} | Publicadas: ${resumen.publicaciones.filter(p => p.resultado?.publicado).length} | Marcadas en cursor: ${resumen.marcadas}`);
-  for (const o of resumen.deteccion.omitidos.slice(0, 10)) linea(`  omitido ${o.vTigerId}: ${o.motivo}`);
-  for (const e of resumen.deteccion.errores.slice(0, 10)) linea(`  error ${e.vTigerId} (${e.etapa}): ${e.detalle}`);
+  for (const o of resumen.deteccion.omitidos.slice(0, 10)) linea(`  omitido ${o.ordenId || o.vTigerId}: ${o.motivo}`);
+  for (const e of resumen.deteccion.errores.slice(0, 10)) linea(`  error ${e.ordenId || e.vTigerId} (${e.etapa}): ${e.detalle}`);
   for (const p of resumen.publicaciones) linea(`  ${p.resultado?.publicado ? '[PUBLICADA]' : '[NO]'} ${p.orden.numeroOrden} -> ${p.resultado?.motivo}${p.resultado?.url ? ` | ${p.resultado.url}` : ''}`);
   linea(`Cursor: ${guardado.ok ? 'guardado' : `ERROR ${guardado.error}`} (${rutaCursor})`);
 
-  recordAuditEvent({ type: 'INVOICE_CICLO', severity: 'info', message: `Ciclo completado: ${resumen.deteccion.candidatos.length} candidatos, ${resumen.publicaciones.filter(p => p.resultado?.publicado).length} publicadas.` });
+  recordAuditEvent({ type: 'INVOICE_CICLO', severity: 'info', message: `Ciclo completado (${sedeEfectiva}): ${resumen.deteccion.candidatos.length} candidatos, ${resumen.publicaciones.filter(p => p.resultado?.publicado).length} publicadas.` });
   return resumen;
 }
 
 async function comandoOnce() {
+  const { sede, dias, lote } = args();
   titulo('ONCE - Recuperacion manual: un barrido de compras (el flujo normal es por evento)');
   const validacion = validarConfig(cfg, { webservice: true, sesionWeb: cfg.pdf.fuente === 'vtiger', ghl: true });
   if (!validacion.ok) return linea(`[STOP] Faltan variables: ${validacion.faltantes.join(', ')}`);
   if (!cfg.habilitado) return linea('[STOP] El interruptor esta APAGADO. Poner INVOICE_PDF_ENABLED=true para publicar.');
 
   const rutaCursor = cfg.escaneo.cursorPath;
-  await unCiclo({ cursor: cargarCursor(rutaCursor), rutaCursor });
+  await unCiclo({ cursor: cargarCursor(rutaCursor), rutaCursor, sedeOverride: sede, diasOverride: dias, loteOverride: lote });
 }
 
 async function comandoScan() {
+  const { sede, dias, lote } = args();
   titulo(`SCAN - Recuperacion continua cada ${cfg.escaneo.intervaloMinutos} minuto(s) (el flujo normal es por evento)`);
   const validacion = validarConfig(cfg, { webservice: true, sesionWeb: cfg.pdf.fuente === 'vtiger', ghl: true });
   if (!validacion.ok) return linea(`[STOP] Faltan variables: ${validacion.faltantes.join(', ')}`);
@@ -312,7 +348,7 @@ async function comandoScan() {
   const intervaloMs = cfg.escaneo.intervaloMinutos * 60 * 1000;
 
   const correr = async () => {
-    try { await unCiclo({ cursor, rutaCursor }); }
+    try { await unCiclo({ cursor, rutaCursor, sedeOverride: sede, diasOverride: dias, loteOverride: lote }); }
     catch (e) { recordAuditEvent({ type: 'INVOICE_CICLO_FALLIDO', severity: 'error', message: e.message }); }
   };
 
@@ -335,7 +371,7 @@ async function comandoVerificar() {
     : `salesorder_no = '${String(numero).replace(/'/g, '')}'`;
 
   const filas = await vt.consultar(
-    `SELECT id, salesorder_no, contact_id, createdtime, hdnGrandTotal, sostatus, cf_1069, cf_3156, cf_3298, quantity, cf_870, cf_872, cf_876, cf_1053 FROM SalesOrder WHERE ${where} LIMIT 1`
+    `SELECT id, salesorder_no, contact_id, createdtime, hdnGrandTotal, sostatus, cf_1069, cf_3156, quantity, cf_870, cf_872, cf_876, cf_1053 FROM SalesOrder WHERE ${where} LIMIT 1`
   );
   if (!filas.length) return linea(`No se encontro la orden (${where}).`);
   const orden = normalizarOrden(filas[0]);
@@ -408,12 +444,45 @@ async function comandoReport() {
 }
 
 // ------------------------------------------------------------------------------
+// COMANDO: report-diario  (REPORTE DE ORDENES VERIFICADAS Y ESTADO DE INVOICES)
+// ------------------------------------------------------------------------------
+async function comandoReportDiario() {
+  const { fecha, sede, noGuardar } = args();
+  titulo('REPORT-DIARIO - Ordenes de Venta VERIFICADAS y estado del Invoice');
+
+  const validacion = validarConfig(cfg, { webservice: true, sesionWeb: false, ghl: false });
+  if (!validacion.ok) return linea(`[STOP] Faltan variables: ${validacion.faltantes.join(', ')}`);
+
+  const vt = clienteVtiger();
+  const fechaEfectiva = fecha || new Date().toISOString().slice(0, 10);
+  const sedeEfectiva = sede ? String(sede).toUpperCase() : cfg.escaneo.sede;
+
+  const r = await generarReporteDiario({
+    clienteVtiger: vt,
+    fecha: fechaEfectiva,
+    sede: sedeEfectiva,
+    pipelineArchivo: cfg.escaneo.pipelinePath || 'data/pipeline.jsonl',
+    cursorRuta: cfg.escaneo.cursorPath || 'data/cursor.json',
+    guardar: !noGuardar,
+    dirReportes: cfg.reporte?.dir || 'data/reports'
+  });
+
+  linea('');
+  linea(r.reporteMd);
+  if (r.rutaGuardada) {
+    linea(`\nReporte guardado en: ${r.rutaGuardada}`);
+  }
+}
+
+// ------------------------------------------------------------------------------
 // DESPACHO
 // ------------------------------------------------------------------------------
 const comandos = {
   serve: comandoServe,
   check: comandoCheck,
   report: comandoReport,
+  'report-diario': comandoReportDiario,
+  'daily-report': comandoReportDiario,
   verificar: comandoVerificar,
   'test-pdf': comandoTestPdf,
   preview: comandoPreview,

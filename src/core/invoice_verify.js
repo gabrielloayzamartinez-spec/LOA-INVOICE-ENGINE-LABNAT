@@ -41,7 +41,9 @@ export function compararInvoiceConVtiger({ orden = {}, contacto = {}, modelo } =
   const productoVtiger = String(orden.producto || orden.cf_3156 || orden.tratamiento || '').trim().toUpperCase();
   const filaProducto = (modelo.tabla?.filas || []).find(f => String(f.texto).toUpperCase() === productoVtiger) || (modelo.tabla?.filas || [])[0];
   agregar('Producto', productoVtiger, filaProducto?.texto || '');
-  agregar('Cantidad', String(orden.cantidad || orden.cf_3298 || '').trim(), filaProducto?.cantidad || '');
+  const cantidadVtiger = String(orden.cantidad || orden.cf_3298 || '').trim();
+  const cantidadEsperada = cantidadVtiger === '' ? '' : formatear(cantidadVtiger);
+  agregar('Cantidad', cantidadEsperada, filaProducto?.cantidad || '');
 
   // --- Direccion de envio (los campos que el rol de API puede no permitir) ---
   // Se compara la direccion SIN el telefono (que va como campo propio) para poder

@@ -34,11 +34,13 @@ import { registrarPipeline } from '../core/pipeline.js';
 export const MOTIVOS_EVENTO = {
   EVENTO_INCOMPLETO: 'EVENTO_INCOMPLETO',
   ORDEN_NO_ENCONTRADA: 'ORDEN_NO_ENCONTRADA',
+  ORDEN_NO_VERIFICADA: 'ORDEN_NO_VERIFICADA',
+  ORDEN_ANTERIOR_A_FECHA_CORTE: 'ORDEN_ANTERIOR_A_FECHA_CORTE',
   CONTACTO_NO_ENCONTRADO: 'CONTACTO_NO_ENCONTRADO'
 };
 
 /** Campos de la orden para el canal de eventos (incluye el vinculo al contacto). */
-export const ORDEN_SELECT_EVENTO = [...ORDEN_SELECT, 'contact_id'];
+export const ORDEN_SELECT_EVENTO = [...new Set([...ORDEN_SELECT, 'contact_id'])];
 
 /**
  * Normaliza el payload del evento, aceptando las formas reales que puede enviar
@@ -88,6 +90,8 @@ export function normalizarEventoCompra(payload = {}) {
  * @param {string}   [args.sede]              Etiqueta de sede para auditoria.
  * @param {boolean}  [args.habilitado]        Override del interruptor (pruebas).
  * @param {Function} [args.publicar]          Inyectable para pruebas.
+ * @param {string}   [args.filtroEstadoLogistico] Estado logistico requerido (ej: 'VERIFICADA').
+ * @param {string}   [args.fechaMinima]       Fecha minima estricta (ej: '2026-10-21').
  * @returns {Promise<{ok: boolean, motivo: string, detalle: string|null, resultado: object|null, orden: object|null}>}
  */
 export async function atenderEventoCompra({
@@ -97,7 +101,9 @@ export async function atenderEventoCompra({
   sede = null,
   habilitado = null,
   publicar = publicarFacturaDeContacto,
-  pipelineArchivo = 'data/pipeline.jsonl'
+  pipelineArchivo = 'data/pipeline.jsonl',
+  filtroEstadoLogistico = null,
+  fechaMinima = null
 } = {}) {
   const evento = normalizarEventoCompra(payload);
   const vacio = { resultado: null, orden: null };
@@ -128,11 +134,33 @@ export async function atenderEventoCompra({
 
   const orden = normalizarOrden(filas[0]);
 
+  // Validacion de estado logistico si fue configurado (ej: 'VERIFICADA')
+  if (filtroEstadoLogistico && orden.estadoLogistico !== filtroEstadoLogistico) {
+    return {
+      ok: false,
+      motivo: MOTIVOS_EVENTO.ORDEN_NO_VERIFICADA,
+      detalle: `El status logistico actual es '${orden.estadoLogistico || 'VACIO'}'. Se requiere '${filtroEstadoLogistico}'.`,
+      orden,
+      resultado: null
+    };
+  }
+
+  // Validacion de corte de fecha estricto (no procesa ordenes anteriores a la fecha corte)
+  if (fechaMinima && orden.fecha && orden.fecha < fechaMinima) {
+    return {
+      ok: false,
+      motivo: MOTIVOS_EVENTO.ORDEN_ANTERIOR_A_FECHA_CORTE,
+      detalle: `La orden fue creada el ${orden.fecha}, anterior a la fecha de corte permitida (${fechaMinima}).`,
+      orden,
+      resultado: null
+    };
+  }
+
   // 2) Contacto destino en GHL: del evento, o por telefono. Ademas se resuelve la
-  // SEDE real (cf_3451) para el monitor por sede. cf_3451 esta permitido en Contacts.
+  // SEDE real (cf_3451 o cf_3127 de la orden) para el monitor por sede.
   let contactId = evento.ghlContactId || '';
   let detalleContacto = null;
-  let sedeEfectiva = sede;
+  let sedeEfectiva = sede || orden.sede;
 
   const vTigerContactId = evento.vTigerContactId || String(filas[0].contact_id || '').trim();
 
@@ -141,10 +169,15 @@ export async function atenderEventoCompra({
       const c = await clienteVtiger.consultar(`SELECT id, phone, mobile, cf_3451 FROM Contacts WHERE id = '${escaparValor(vTigerContactId)}' LIMIT 1`);
       const cc = c[0] || {};
       if (String(cc.cf_3451 || '').trim()) sedeEfectiva = String(cc.cf_3451).trim();
-      if (!evento.telefono && !contactId) evento.telefono = String(cc.phone || cc.mobile || '').trim();
+      if (!evento.telefono && !contactId) {
+        evento.telefono = String(orden.telefono || cc.phone || cc.mobile || '').trim();
+      }
     } catch (e) {
       detalleContacto = `No se pudo leer el contacto en vTiger: ${e.message}`;
+      if (!evento.telefono && orden.telefono) evento.telefono = orden.telefono;
     }
+  } else if (!evento.telefono && orden.telefono) {
+    evento.telefono = orden.telefono;
   }
 
   if (!contactId) {
