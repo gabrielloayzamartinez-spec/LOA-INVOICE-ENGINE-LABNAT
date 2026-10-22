@@ -210,6 +210,8 @@ export function crearDepsFactura({ apiKeyCentral, locationIdCentral, fetchImpl =
           mensaje: texto,
           apiKey: apiKeyCentral,
           tipo: cfgActual.mensaje.tipo || 'SMS',
+          validarEnlace: true,
+          urlAValidar: url,
           fetchImpl
         });
         if (msgRes.ok) {

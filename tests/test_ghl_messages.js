@@ -122,6 +122,17 @@ assert(rError.ok === false, 'Maneja error de GHL');
 assert(rError.status === 500, 'Registra el status HTTP');
 assert(rError.motivo === MOTIVOS_MENSAJE.RECHAZADO, 'Motivo rechazado');
 
+// ------------------------------------------------------------------------------
+console.log('\n[TEST 5] Candado de calidad: enlace no sincronizado bloquea el envio');
+const rBloqueado = await enviarMensajeFacturaGhl({
+  contactId: 'contact-abc',
+  mensaje: 'Hola, mira tu factura: http://localhost:9999/enlace_inexistente_404',
+  apiKey: 'pit-test',
+  validarEnlace: true
+});
+assert(rBloqueado.ok === false, 'Enlace no sincronizado bloquea el envio');
+assert(rBloqueado.motivo === MOTIVOS_MENSAJE.ENLACE_NO_SINCRONIZADO, 'Motivo es ENLACE_NO_SINCRONIZADO');
+
 console.log('\n==========================================================');
 console.log(` RESULTADO: ${passed} PASS / ${failed} FAIL`);
 console.log('==========================================================\n');

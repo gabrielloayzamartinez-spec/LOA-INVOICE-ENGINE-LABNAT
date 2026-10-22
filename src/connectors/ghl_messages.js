@@ -14,6 +14,7 @@ import { ghlFetch } from './ghl_client.js';
 import { configFactura } from '../config.js';
 import { recordAuditEvent } from '../core/audit.js';
 import { SEDES_ATENCION, normalizarSede, obtenerAtencionSede } from '../core/sedes.js';
+import { verificarEnlaceSincronizado } from '../core/link_validator.js';
 
 export { SEDES_ATENCION, normalizarSede, obtenerAtencionSede };
 
@@ -23,7 +24,8 @@ export const MOTIVOS_MENSAJE = {
   TOKEN_INVALIDO: 'TOKEN_INVALIDO',
   DESACTIVADO: 'DESACTIVADO',
   ERROR_RED: 'ERROR_RED',
-  RECHAZADO: 'RECHAZADO_POR_GHL'
+  RECHAZADO: 'RECHAZADO_POR_GHL',
+  ENLACE_NO_SINCRONIZADO: 'ENLACE_NO_SINCRONIZADO'
 };
 
 /**
@@ -101,6 +103,8 @@ export async function enviarMensajeFacturaGhl({
   mensaje,
   apiKey,
   tipo = 'SMS',
+  validarEnlace = false,
+  urlAValidar = null,
   fetchImpl = null,
   caller = 'InvoiceMessenger'
 } = {}) {
@@ -110,6 +114,31 @@ export async function enviarMensajeFacturaGhl({
 
   if (!contactId || !mensaje || !key) {
     return { ...vacio, motivo: MOTIVOS_MENSAJE.PARAMS_INCOMPLETOS, detalle: 'Faltan contactId, mensaje o apiKey.' };
+  }
+
+  // CANDADO ESTRICTO DE CALIDAD: si se solicita validar enlace, comprobar que el documento esté sincronizado
+  if (validarEnlace) {
+    let urlDestino = urlAValidar;
+    if (!urlDestino) {
+      const match = /https?:\/\/[^\s]+/i.exec(mensaje);
+      if (match) urlDestino = match[0].replace(/[.,;:)]+$/, '');
+    }
+    if (urlDestino) {
+      const verif = await verificarEnlaceSincronizado(urlDestino);
+      if (!verif.sincronizado) {
+        recordAuditEvent({
+          type: 'INVOICE_SMS_BLOQUEADO_DOCUMENTO_NO_SINCRONIZADO',
+          severity: 'warn',
+          message: `Envio de SMS para contacto ${contactId} bloqueado: el enlace ${urlDestino} no tiene el documento sincronizado (${verif.detalle}).`
+        });
+        return {
+          ...vacio,
+          status: verif.status || 404,
+          motivo: MOTIVOS_MENSAJE.ENLACE_NO_SINCRONIZADO,
+          detalle: `CANDADO DE CALIDAD: El documento en ${urlDestino} no esta sincronizado (${verif.detalle}). Envio bloqueado.`
+        };
+      }
+    }
   }
 
   const enviar = fetchImpl || ((url, opciones) => ghlFetch(url, opciones, 1, caller));
