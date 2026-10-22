@@ -26,7 +26,25 @@ export const MOTIVOS_MENSAJE = {
   RECHAZADO: 'RECHAZADO_POR_GHL'
 };
 
-export const PLANTILLA_SMS_DEFECTO = 'Hola {nombre}, gracias por tu compra en Laboratorios Naturales. Aquí puedes ver y descargar tu factura oficial de la orden {numeroOrden}: {urlPdf}\n\nPara cualquier consulta o atención al cliente, puedes comunicarte al {telefonoAtencion}.';
+/**
+ * Formatea un nombre y apellido combinados de forma elegante.
+ */
+export function formatearNombreCompleto(nombre = '', apellido = '') {
+  const partes = [nombre, apellido].filter(Boolean).map(p => String(p).trim()).filter(Boolean);
+  const crudo = partes.join(' ').trim();
+  if (!crudo) return '';
+  // Si viene en MAYUSCULAS SOSTENIDAS (ej: "ROSALINDA VALDEZ"), lo pasa a Title Case: "Rosalinda Valdez"
+  if (crudo === crudo.toUpperCase() && crudo.length > 2) {
+    return crudo
+      .toLowerCase()
+      .split(/\s+/)
+      .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ');
+  }
+  return crudo;
+}
+
+export const PLANTILLA_SMS_DEFECTO = 'Hola {nombreCompleto}, gracias por tu compra en Laboratorios Naturales. Aquí puedes ver y descargar tu factura oficial de la orden {numeroOrden}: {urlPdf}\nPara cualquier consulta o atención al cliente, puedes comunicarte al {telefonoAtencion}.';
 
 export function headersCentral(apiKey) {
   return {
@@ -41,7 +59,9 @@ export function headersCentral(apiKey) {
  * Construye el texto del mensaje a partir de la plantilla y asigna el teléfono de atención de la sede.
  */
 export function construirTextoMensaje({
-  nombre = 'cliente',
+  nombre = '',
+  apellido = '',
+  nombreCompleto = '',
   numeroOrden = '',
   urlPdf = '',
   sede = '',
@@ -52,8 +72,19 @@ export function construirTextoMensaje({
   const tel = String(telefonoAtencion || atencion.telefono).trim();
   const patron = plantilla || process.env.INVOICE_SMS_TEMPLATE || PLANTILLA_SMS_DEFECTO;
 
+  const clienteFinal = (nombreCompleto ? String(nombreCompleto).trim() : null)
+    || formatearNombreCompleto(nombre, apellido)
+    || String(nombre || 'estimado cliente').trim();
+
+  const incluyeApellidoToken = /\{apellido\}/i.test(patron);
+  const nombreParaToken = incluyeApellidoToken
+    ? (String(nombre).trim() || clienteFinal.split(' ')[0] || 'cliente')
+    : clienteFinal;
+
   return patron
-    .replace(/\{nombre\}/gi, String(nombre || 'estimado cliente').trim())
+    .replace(/\{nombreCompleto\}/gi, clienteFinal)
+    .replace(/\{nombre\}/gi, nombreParaToken)
+    .replace(/\{apellido\}/gi, String(apellido || '').trim())
     .replace(/\{numeroOrden\}/gi, String(numeroOrden || '').trim())
     .replace(/\{urlPdf\}/gi, String(urlPdf || '').trim())
     .replace(/\{telefonoAtencion\}/gi, tel)

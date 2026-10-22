@@ -52,6 +52,17 @@ assert(msgRoosevelt.includes('888-513-0310'), 'Roosevelt asigna 888-513-0310');
 const msgPiura = construirTextoMensaje({ nombre: 'Ana', numeroOrden: 'S-4', urlPdf: 'https://url', sede: 'PIURA' });
 assert(msgPiura.includes('661-242-5576'), 'Piura asigna 661-242-5576');
 
+// Test especifico NOMBRE APELLIDO + Sede:
+const msgNombreApellido = construirTextoMensaje({
+  nombre: 'ROSALINDA',
+  apellido: 'VALDEZ',
+  numeroOrden: 'S-97589',
+  urlPdf: 'https://facturas.labnaturales.com/S-97589',
+  sede: 'BENAVIDES'
+});
+assert(msgNombreApellido.includes('Rosalinda Valdez'), 'Formatea NOMBRE APELLIDO correctamente');
+assert(msgNombreApellido.includes('888-720-0078'), 'Asigna telefono de Benavides 888-720-0078');
+
 const msgCustom = construirTextoMensaje({
   nombre: 'Carlos',
   numeroOrden: 'ORD-1',

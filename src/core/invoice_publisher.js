@@ -192,9 +192,14 @@ export function crearDepsFactura({ apiKeyCentral, locationIdCentral, fetchImpl =
       // Envio directo por API de GHL (si esta configurado INVOICE_AUTO_SEND_SMS=true)
       const cfgActual = configFactura();
       if (cfgActual.mensaje?.autoEnviar && url) {
-        const nombre = contactoGhl?.firstName || contactoGhl?.contactName || contactoGhl?.name || 'cliente';
+        const nombreVtiger = [orden?.nombreCliente, orden?.apellidoCliente].filter(Boolean).join(' ').trim();
+        const nombreGhl = contactoGhl?.name || [contactoGhl?.firstName, contactoGhl?.lastName].filter(Boolean).join(' ').trim() || contactoGhl?.contactName || '';
+        const nombreCompleto = nombreVtiger || nombreGhl || 'cliente';
+
         const texto = construirTextoMensaje({
-          nombre,
+          nombre: orden?.nombreCliente || contactoGhl?.firstName || nombreCompleto,
+          apellido: orden?.apellidoCliente || contactoGhl?.lastName || '',
+          nombreCompleto,
           numeroOrden: orden?.numeroOrden || '',
           urlPdf: url,
           sede: orden?.sede || '',
