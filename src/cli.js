@@ -252,7 +252,9 @@ async function comandoServe() {
 
   const validacion = validarConfig(cfg, { webservice: true, sesionWeb: cfg.pdf.fuente === 'vtiger', ghl: true, webhook: true });
   if (!validacion.ok) return linea(`[STOP] Faltan variables: ${validacion.faltantes.join(', ')}`);
-  if (!cfg.habilitado) return linea('[STOP] INVOICE_PDF_ENABLED=false: el endpoint responderia DESACTIVADO. Activarlo para publicar.');
+  if (!cfg.habilitado) {
+    linea('  [MODO SEGURO] INVOICE_PDF_ENABLED=false: Emisión desactivada. Redirecciones (/S-XXXXX) y /salud ACTIVAS.');
+  }
 
   const vt = clienteVtiger();
   const atender = (payload) => atenderEventoCompra({
