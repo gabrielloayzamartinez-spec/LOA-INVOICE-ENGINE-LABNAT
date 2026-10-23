@@ -19,7 +19,7 @@
  */
 
 import { obtenerAtencionSede } from './sedes.js';
-import { perteneceAlDiaOperativo } from './dia_operativo.js';
+import { perteneceAlDiaOperativo, obtenerDiaOperativo } from './dia_operativo.js';
 
 /** Tag que dispara el workflow de envio. */
 export const TAG_FACTURA_LISTA = 'FACTURA_LISTA';
@@ -95,9 +95,14 @@ export function decidirPublicacion({
   if (!numeroOrden) return { publicar: false, motivo: MOTIVOS_PUBLICACION.ORDEN_SIN_NUMERO };
   if (!String(orden.id || '').trim()) return { publicar: false, motivo: MOTIVOS_PUBLICACION.ORDEN_SIN_ID };
 
-  // CANDADO 1: Status Logistico
-  if (estadoLogisticoRequerido && orden.estadoLogistico && orden.estadoLogistico !== estadoLogisticoRequerido) {
-    return { publicar: false, motivo: MOTIVOS_PUBLICACION.ORDEN_NO_VERIFICADA };
+  // CANDADO 1: Status Logistico (acepta VERIFICADA y avance logistico ENVIADA.....)
+  if (estadoLogisticoRequerido && orden.estadoLogistico) {
+    const ordenLog = String(orden.estadoLogistico).trim().toUpperCase();
+    const reqLog = String(estadoLogisticoRequerido).trim().toUpperCase();
+    const esValido = ordenLog === reqLog || ordenLog.includes(reqLog) || ordenLog.includes('ENVIADA') || ordenLog.includes('VERIFICADA');
+    if (!esValido) {
+      return { publicar: false, motivo: MOTIVOS_PUBLICACION.ORDEN_NO_VERIFICADA };
+    }
   }
 
   // CANDADO 2: Total debe ser mayor a 0 (evita facturar ordenes canceladas en $0.00)
@@ -126,7 +131,11 @@ export function decidirPublicacion({
   }
 
   // CANDADO 3: Corte de Fecha (no procesar ordenes historicas hacia atras)
-  if (fechaMinima && orden.fecha && orden.fecha < fechaMinima) {
+  const fechaCorteEfectiva = (fechaMinima && ['HOY', 'TODAY'].includes(String(fechaMinima).toUpperCase().trim()))
+    ? obtenerDiaOperativo().fecha
+    : fechaMinima;
+
+  if (fechaCorteEfectiva && orden.fecha && orden.fecha < fechaCorteEfectiva) {
     return { publicar: false, motivo: MOTIVOS_PUBLICACION.ORDEN_ANTERIOR_A_FECHA_CORTE };
   }
 

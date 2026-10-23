@@ -156,6 +156,14 @@ async function main() {
     const contactId = contacto.id;
     console.log(`  -> Contacto resuelto: ${contactId}`);
 
+    // Verificación de idempotencia estricta en el contacto
+    const tagsContacto = Array.isArray(contacto.tags) ? contacto.tags.map(t => String(t).toUpperCase()) : [];
+    if (tagsContacto.includes('FACTURA_ENVIADA')) {
+      console.log(`  ℹ [OMITIDO] La factura ${ord.numeroOrden} ya fue entregada a este contacto previamente (tag FACTURA_ENVIADA).`);
+      resultados.push({ orden: ord.numeroOrden, ok: true, omitido: true, motivo: 'YA_ENVIADA' });
+      continue;
+    }
+
     // C. ACTUALIZAR CAMPOS Y TAGS
     console.log(`  3. Actualizando campos y etiquetas en GHL...`);
     const customFields = [];
@@ -165,7 +173,7 @@ async function main() {
     if (idsPuente.vtigerSede) customFields.push({ id: idsPuente.vtigerSede, field_value: atencion.clave });
 
     await escribirCamposPuente(contactId, customFields, { headers });
-    await agregarTagsContacto(contactId, ['factura_lista', 'factura_enviada', `sede_${atencion.clave.toLowerCase()}`], { headers });
+    await agregarTagsContacto(contactId, ['FACTURA_LISTA', 'FACTURA_ENVIADA', `SEDE_${atencion.clave}`], { headers });
 
     // D. CONSTRUIR TEXTO DEL SMS
     const textoSms = construirTextoMensaje({

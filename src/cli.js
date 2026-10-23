@@ -309,7 +309,7 @@ async function unCiclo({ cursor, rutaCursor, sedeOverride = null, diasOverride =
     sede: sedeEfectiva,
     dias: diasEfectivos,
     lote: loteEfectivo,
-    modoDeteccion,
+    modoDeteccion: 'ordenes_verificadas',
     fechaMinima: cfg.escaneo.fechaMinima,
     soloHoy: cfg.escaneo.soloHoy,
     estadoLogistico: cfg.escaneo.triggerStatus || 'VERIFICADA',
