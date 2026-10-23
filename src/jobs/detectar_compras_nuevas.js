@@ -25,6 +25,7 @@
 import fs from 'fs';
 import path from 'path';
 import { escaparValor } from '../connectors/vtiger_webservice.js';
+import { obtenerDiaOperativo, perteneceAlDiaOperativo, clausulaSqlDiaOperativo } from '../core/dia_operativo.js';
 
 /** Campos de la ultima orden (todos verificados contra la instancia real). */
 export const ORDEN_SELECT = [
@@ -237,14 +238,15 @@ export async function detectarComprasNuevas({
  */
 export async function detectarOrdenesVerificadas({
   clienteVtiger,
-  fechaMinima = '2026-10-21',
+  fechaMinima = 'HOY',
   sede = 'TODAS',
   lote = 50,
   cursor = { procesadas: {} },
   buscarContactoGhl = null,
   estadoLogistico = 'VERIFICADA',
   montoMinimo = 1.00,
-  asuntosPermitidos = ['VENTA']
+  asuntosPermitidos = ['VENTA'],
+  soloHoy = false
 } = {}) {
   if (!clienteVtiger || typeof clienteVtiger.consultar !== 'function') {
     throw new TypeError('detectarOrdenesVerificadas requiere un clienteVtiger con .consultar(sql).');
@@ -252,11 +254,16 @@ export async function detectarOrdenesVerificadas({
 
   const sedeLimpia = String(sede || '').toUpperCase().trim();
   const esGeneral = !sedeLimpia || sedeLimpia === 'TODAS' || sedeLimpia === 'GENERAL' || sedeLimpia === 'ALL';
-  const fechaCorteLimpia = String(fechaMinima || '2026-10-21').trim();
+  const esSoloHoy = Boolean(soloHoy || fechaMinima === 'HOY');
+  const diaOperativo = esSoloHoy ? obtenerDiaOperativo() : obtenerDiaOperativo(fechaMinima);
   const estadoRequerido = String(estadoLogistico || 'VERIFICADA').trim();
 
   const condicionSede = esGeneral ? '' : ` AND cf_3127 = '${escaparValor(sedeLimpia)}'`;
-  const sql = `SELECT ${ORDEN_SELECT.join(', ')} FROM SalesOrder WHERE cf_882 IN ('VERIFICADA', 'ENVIADA.....') AND createdtime >= '${escaparValor(fechaCorteLimpia)} 00:00:00'${condicionSede} ORDER BY createdtime ASC LIMIT ${lote}`;
+  const condicionFecha = esSoloHoy
+    ? clausulaSqlDiaOperativo(diaOperativo, 'createdtime')
+    : `createdtime >= '${escaparValor(diaOperativo.fecha)} 00:00:00'`;
+
+  const sql = `SELECT ${ORDEN_SELECT.join(', ')} FROM SalesOrder WHERE cf_882 IN ('VERIFICADA', 'ENVIADA.....') AND ${condicionFecha}${condicionSede} ORDER BY createdtime ASC LIMIT ${lote}`;
 
   let ordenes = [];
   try {
@@ -267,7 +274,9 @@ export async function detectarOrdenesVerificadas({
 
   const resultado = {
     sede: esGeneral ? 'TODAS' : sedeLimpia,
-    fechaMinima: fechaCorteLimpia,
+    fechaMinima: diaOperativo.fecha,
+    diaOperativo: diaOperativo.descripcion,
+    rangoHorario: diaOperativo.rangoHorarioTexto,
     estadoLogistico: estadoRequerido,
     asuntosPermitidos,
     revisados: ordenes.length,
@@ -279,6 +288,18 @@ export async function detectarOrdenesVerificadas({
   for (const o of ordenes) {
     const orden = normalizarOrden(o);
     const clave = claveCursor(orden);
+
+    // Candado de Calendario: verificar que la orden pertenece estrictamente al Día Operativo en curso
+    if (esSoloHoy && !perteneceAlDiaOperativo(orden.createdtime, diaOperativo)) {
+      resultado.omitidos.push({
+        ordenId: orden.id,
+        numeroOrden: orden.numeroOrden,
+        motivo: 'ORDEN_FUERA_DE_DIA_OPERATIVO',
+        createdtime: orden.createdtime,
+        clave
+      });
+      continue;
+    }
 
     if (cursor?.procesadas?.[clave]) {
       resultado.omitidos.push({ ordenId: orden.id, numeroOrden: orden.numeroOrden, motivo: 'YA_PROCESADA', clave });

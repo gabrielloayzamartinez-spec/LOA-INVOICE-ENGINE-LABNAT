@@ -94,7 +94,9 @@ export function configFactura() {
       // Status Logistico que dispara la facturacion en SalesOrder (vTiger cf_882).
       triggerStatus: String(env('INVOICE_TRIGGER_STATUS', 'VERIFICADA')).trim(),
       // Fecha minima obligatoria (estricta): nunca procesa hacia atras.
-      fechaMinima: String(env('INVOICE_FECHA_MINIMA', '2026-10-21')).trim(),
+      fechaMinima: String(env('INVOICE_FECHA_MINIMA', 'HOY')).trim(),
+      // Modo estricto de tiempo presente: solo procesa compras de HOY (00:00:00 a 23:59:59)
+      soloHoy: envBool('INVOICE_SOLO_HOY', true),
       // Umbral comercial minimo: ordenes con total <= este monto se omiten (ej: $1.00 de CS / preautorizaciones).
       montoMinimo: Math.max(envFloat('INVOICE_MIN_AMOUNT', 1.00), 0),
       // Asuntos de orden autorizados para facturar (por defecto SOLO 'VENTA', excluye CUSTOMER, MUESTRA GRATIS, CHARGEBACK)

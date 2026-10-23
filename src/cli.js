@@ -35,6 +35,7 @@ import { cargarCursor, guardarCursor, podarCursor, ejecutarCiclo, normalizarOrde
 import { atenderEventoCompra } from './jobs/atender_evento.js';
 import { iniciarServidorEventos } from './webhook_server.js';
 import { generarReporteDiario } from './core/daily_report.js';
+import { obtenerDiaOperativo, verificarCambioDia } from './core/dia_operativo.js';
 
 cargarEnv();
 const cfg = configFactura();
@@ -294,7 +295,8 @@ async function unCiclo({ cursor, rutaCursor, sedeOverride = null, diasOverride =
   const diasEfectivos = diasOverride !== null && diasOverride !== undefined ? Number(diasOverride) : cfg.escaneo.dias;
   const loteEfectivo = loteOverride !== null && loteOverride !== undefined ? Number(loteOverride) : cfg.escaneo.lote;
 
-  const modoDeteccion = cfg.escaneo.triggerStatus === 'VERIFICADA' ? 'ordenes_verificadas' : 'contactos_compradores';
+  const diaOp = obtenerDiaOperativo();
+  linea(`\n[DÍA OPERATIVO ACTIVO] ${diaOp.descripcion} (Horario estricto: 12:00:00 AM a 11:59:59 PM)`);
 
   const resumen = await ejecutarCiclo({
     clienteVtiger: vt,
@@ -308,7 +310,8 @@ async function unCiclo({ cursor, rutaCursor, sedeOverride = null, diasOverride =
     dias: diasEfectivos,
     lote: loteEfectivo,
     modoDeteccion,
-    fechaMinima: cfg.escaneo.fechaMinima || '2026-10-21',
+    fechaMinima: cfg.escaneo.fechaMinima,
+    soloHoy: cfg.escaneo.soloHoy,
     estadoLogistico: cfg.escaneo.triggerStatus || 'VERIFICADA',
     estadoCompra: cfg.escaneo.estadoCompra,
     buscarContactoGhl: (tel) => buscarContactoGhl(tel)
