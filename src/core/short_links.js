@@ -151,7 +151,29 @@ export function resolverDestinoFactura(
     'S-97611': 'https://assets.cdn.filesafe.space/ATPYNnsfZ1W8sd6WgWIV/media/be5e5bf6-d4e3-4c87-863c-e4ba8ef634de.pdf',
     'S-97612': 'https://assets.cdn.filesafe.space/ATPYNnsfZ1W8sd6WgWIV/media/729f66ee-56ee-47e7-b01e-d946c2a34fb6.pdf',
     'S-97613': 'https://assets.cdn.filesafe.space/ATPYNnsfZ1W8sd6WgWIV/media/2be629e5-7296-47d5-a634-fd555d41ecf9.pdf',
-    'S-97614': 'https://assets.cdn.filesafe.space/ATPYNnsfZ1W8sd6WgWIV/media/e51e10da-1700-4546-9e35-b249fdd3070a.pdf'
+    'S-97614': 'https://assets.cdn.filesafe.space/ATPYNnsfZ1W8sd6WgWIV/media/e51e10da-1700-4546-9e35-b249fdd3070a.pdf',
+    'S-97618': 'https://assets.cdn.filesafe.space/ATPYNnsfZ1W8sd6WgWIV/media/3c787e6c-8177-404e-a5aa-e6f467d25f16.pdf',
+    'S-97619': 'https://assets.cdn.filesafe.space/ATPYNnsfZ1W8sd6WgWIV/media/0dc9bd91-e406-461e-ad2b-d6ed5d9bffc4.pdf',
+    'S-97620': 'https://assets.cdn.filesafe.space/ATPYNnsfZ1W8sd6WgWIV/media/a605c367-1a09-45a0-b02c-cdb75b577f7b.pdf',
+    'S-97621': 'https://assets.cdn.filesafe.space/ATPYNnsfZ1W8sd6WgWIV/media/67bb4115-4d35-4161-9b1d-7a050da833ca.pdf',
+    'S-97623': 'https://assets.cdn.filesafe.space/ATPYNnsfZ1W8sd6WgWIV/media/7ea33867-5db7-4cb8-8cf7-fd86ab695dd1.pdf',
+    'S-97624': 'https://assets.cdn.filesafe.space/ATPYNnsfZ1W8sd6WgWIV/media/624a8756-6a4a-4135-a7ef-37e48f745c79.pdf',
+    'S-97625': 'https://assets.cdn.filesafe.space/ATPYNnsfZ1W8sd6WgWIV/media/4e63f33e-583b-47dd-9d8b-688621e22c33.pdf',
+    'S-97627': 'https://assets.cdn.filesafe.space/ATPYNnsfZ1W8sd6WgWIV/media/a8b227d9-a81e-45a8-808d-f1961075e74a.pdf',
+    'S-97628': 'https://assets.cdn.filesafe.space/ATPYNnsfZ1W8sd6WgWIV/media/6a93c4fc-92e2-4e0f-b793-f21e9291c332.pdf',
+    'S-97629': 'https://assets.cdn.filesafe.space/ATPYNnsfZ1W8sd6WgWIV/media/e7cd979c-6db6-4c9c-8408-e3548eb89a1a.pdf',
+    'S-97630': 'https://assets.cdn.filesafe.space/ATPYNnsfZ1W8sd6WgWIV/media/73e46f84-dea9-4182-8ca0-8edf7c0cc70f.pdf',
+    'S-97631': 'https://assets.cdn.filesafe.space/ATPYNnsfZ1W8sd6WgWIV/media/6d509f68-a376-4b23-9abc-f94a253601b0.pdf',
+    'S-97632': 'https://assets.cdn.filesafe.space/ATPYNnsfZ1W8sd6WgWIV/media/afaaf2ae-9063-4700-b5ab-54306dd59c96.pdf',
+    'S-97633': 'https://assets.cdn.filesafe.space/ATPYNnsfZ1W8sd6WgWIV/media/fef6bcd8-cdc3-422f-b1f2-f70b41da7122.pdf',
+    'S-97634': 'https://assets.cdn.filesafe.space/ATPYNnsfZ1W8sd6WgWIV/media/d4c5bd19-4136-4bc3-8146-948eeaf0a0f3.pdf',
+    'S-97635': 'https://assets.cdn.filesafe.space/ATPYNnsfZ1W8sd6WgWIV/media/9d32bda5-6fe8-4c2b-baeb-d32c68f4a579.pdf',
+    'S-97636': 'https://assets.cdn.filesafe.space/ATPYNnsfZ1W8sd6WgWIV/media/fe9b2650-d0eb-4ecd-9a2b-edfdc4f4b9a2.pdf',
+    'S-97637': 'https://assets.cdn.filesafe.space/ATPYNnsfZ1W8sd6WgWIV/media/9d01201e-b2cc-4328-9ba4-1716cf542f2f.pdf',
+    'S-97638': 'https://assets.cdn.filesafe.space/ATPYNnsfZ1W8sd6WgWIV/media/1c2ed201-ab2b-4f02-bdae-4f8d41950530.pdf',
+    'S-97639': 'https://assets.cdn.filesafe.space/ATPYNnsfZ1W8sd6WgWIV/media/aa710736-4109-46a5-bfa9-adaa3f1ff008.pdf',
+    'S-97640': 'https://assets.cdn.filesafe.space/ATPYNnsfZ1W8sd6WgWIV/media/42252a11-36c7-4de7-8119-96a4612e19f9.pdf',
+    'S-97641': 'https://assets.cdn.filesafe.space/ATPYNnsfZ1W8sd6WgWIV/media/7b174cf2-c3a9-46f2-a0ad-14b3d058667b.pdf'
   };
   if (estaticos[clave]) return estaticos[clave];
 

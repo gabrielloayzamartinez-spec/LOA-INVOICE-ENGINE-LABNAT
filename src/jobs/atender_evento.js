@@ -134,8 +134,11 @@ export async function atenderEventoCompra({
 
   const orden = normalizarOrden(filas[0]);
 
-  // Validacion de estado logistico si fue configurado (ej: 'VERIFICADA')
-  if (filtroEstadoLogistico && orden.estadoLogistico !== filtroEstadoLogistico) {
+  // Validacion de estado logistico si fue configurado (ej: 'VERIFICADA' o avanzada a 'ENVIADA.....')
+  const estadoLog = String(orden.estadoLogistico || '').trim().toUpperCase();
+  const filtroLog = String(filtroEstadoLogistico || '').trim().toUpperCase();
+  const esEstadoValido = !filtroEstadoLogistico || estadoLog.includes(filtroLog) || estadoLog.includes('ENVIADA') || estadoLog.includes('VERIFICADA');
+  if (!esEstadoValido) {
     return {
       ok: false,
       motivo: MOTIVOS_EVENTO.ORDEN_NO_VERIFICADA,

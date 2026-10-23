@@ -256,7 +256,7 @@ export async function detectarOrdenesVerificadas({
   const estadoRequerido = String(estadoLogistico || 'VERIFICADA').trim();
 
   const condicionSede = esGeneral ? '' : ` AND cf_3127 = '${escaparValor(sedeLimpia)}'`;
-  const sql = `SELECT ${ORDEN_SELECT.join(', ')} FROM SalesOrder WHERE cf_882 = '${escaparValor(estadoRequerido)}' AND createdtime >= '${escaparValor(fechaCorteLimpia)} 00:00:00'${condicionSede} ORDER BY createdtime ASC LIMIT ${lote}`;
+  const sql = `SELECT ${ORDEN_SELECT.join(', ')} FROM SalesOrder WHERE cf_882 IN ('VERIFICADA', 'ENVIADA.....') AND createdtime >= '${escaparValor(fechaCorteLimpia)} 00:00:00'${condicionSede} ORDER BY createdtime ASC LIMIT ${lote}`;
 
   let ordenes = [];
   try {

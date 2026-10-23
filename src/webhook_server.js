@@ -27,7 +27,7 @@
 
 import http from 'node:http';
 import { recordAuditEvent } from './core/audit.js';
-import { resolverDestinoFactura } from './core/short_links.js';
+import { resolverDestinoFactura, guardarEnlaceFactura } from './core/short_links.js';
 
 const LIMITE_BYTES = 64 * 1024;
 
@@ -117,6 +117,31 @@ export function crearServidorEventos({ atender, token, rutaLinks = 'data/links.j
       });
 
       req.on('error', () => { if (!abortado) responder(400, { ok: false, motivo: 'ERROR_DE_LECTURA' }); });
+      return;
+    }
+
+    // ------------------------------------ REGISTRO DE ENLACE EN VIVO (API)
+    if (req.method === 'POST' && url.pathname === '/enlace/registrar') {
+      const recibido = String(req.headers['x-loa-token'] || url.searchParams.get('token') || '');
+      if (!token || recibido !== token) {
+        return responder(401, { ok: false, motivo: 'NO_AUTORIZADO' });
+      }
+
+      const trozos = [];
+      req.on('data', c => trozos.push(c));
+      req.on('end', () => {
+        try {
+          const body = JSON.parse(Buffer.concat(trozos).toString('utf8') || '{}');
+          const { numeroOrden, urlDestino, codigo } = body;
+          if (!numeroOrden || !urlDestino) {
+            return responder(400, { ok: false, motivo: 'DATOS_INCOMPLETOS' });
+          }
+          const resGuardar = guardarEnlaceFactura({ numeroOrden, urlDestino, codigo, ruta: rutaLinks });
+          return responder(200, { ok: true, guardado: resGuardar });
+        } catch (e) {
+          return responder(500, { ok: false, motivo: e.message });
+        }
+      });
       return;
     }
 
