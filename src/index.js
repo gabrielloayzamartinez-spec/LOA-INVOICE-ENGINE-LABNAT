@@ -58,3 +58,32 @@ export {
   registrarPipeline, leerPipeline, ultimoEstadoPorOrden,
   resumenPipeline, atascadas, formatearResumen
 } from './core/pipeline.js';
+
+// Día Operativo y entendimiento calendario
+export {
+  obtenerDiaOperativo, perteneceAlDiaOperativo,
+  clausulaSqlDiaOperativo, verificarCambioDia,
+  ZONA_HORARIA_DEFECTO, DIAS_SEMANA, MESES_ANIO
+} from './core/dia_operativo.js';
+
+// Sedes de atención al cliente
+export {
+  obtenerAtencionSede, SEDES_ATENCION
+} from './core/sedes.js';
+
+// Enlaces cortos de marca propia (facturas.labnaturales.com)
+export {
+  guardarEnlaceFactura, cargarEnlaces,
+  resolverDestinoFactura, construirUrlBranded
+} from './core/short_links.js';
+
+// Validador de enlaces pre-flight
+export {
+  verificarEnlaceSincronizado, esperarEnCola
+} from './core/link_validator.js';
+
+// Reportes diarios
+export {
+  generarReporteDiario
+} from './core/daily_report.js';
+

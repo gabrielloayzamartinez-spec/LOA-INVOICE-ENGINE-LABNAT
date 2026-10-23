@@ -49,7 +49,18 @@ const esperados = {
   subirPdfAMediaLibrary: 'function', verificarAccesoMedia: 'function', MOTIVOS_MEDIA: 'object', ghlFetch: 'function',
   // Deteccion
   detectarComprasNuevas: 'function', cargarCursor: 'function', guardarCursor: 'function', claveCursor: 'function',
-  normalizarOrden: 'function', ORDEN_SELECT: 'object'
+  normalizarOrden: 'function', ORDEN_SELECT: 'object',
+  // Día Operativo y calendario
+  obtenerDiaOperativo: 'function', perteneceAlDiaOperativo: 'function',
+  clausulaSqlDiaOperativo: 'function', verificarCambioDia: 'function',
+  // Sedes
+  obtenerAtencionSede: 'function', SEDES_ATENCION: 'object',
+  // Enlaces de marca y validador
+  guardarEnlaceFactura: 'function', cargarEnlaces: 'function',
+  resolverDestinoFactura: 'function', construirUrlBranded: 'function',
+  verificarEnlaceSincronizado: 'function', esperarEnCola: 'function',
+  // Reportes
+  generarReporteDiario: 'function'
 };
 
 let faltantes = 0;

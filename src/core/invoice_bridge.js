@@ -19,6 +19,7 @@
  */
 
 import { obtenerAtencionSede } from './sedes.js';
+import { perteneceAlDiaOperativo } from './dia_operativo.js';
 
 /** Tag que dispara el workflow de envio. */
 export const TAG_FACTURA_LISTA = 'FACTURA_LISTA';
@@ -45,6 +46,7 @@ export const MOTIVOS_PUBLICACION = {
   ORDEN_MONTO_NO_COMERCIAL: 'ORDEN_MONTO_NO_COMERCIAL',
   ORDEN_ASUNTO_NO_FACTURABLE: 'ORDEN_ASUNTO_NO_FACTURABLE',
   ORDEN_ANTERIOR_A_FECHA_CORTE: 'ORDEN_ANTERIOR_A_FECHA_CORTE',
+  ORDEN_FUERA_DE_DIA_OPERATIVO: 'ORDEN_FUERA_DE_DIA_OPERATIVO',
   SIN_PDF: 'SIN_PDF'
 };
 
@@ -74,6 +76,8 @@ export function nombreArchivoFactura(numeroOrden = '') {
  * @param {string}  [fechaMinima]             Fecha minima permitida (ej: '2026-10-21').
  * @param {number}  [montoMinimo]             Monto minimo facturable (ej: 1.00 para omitir <= $1.00).
  * @param {string[]} [asuntosPermitidos]      Asuntos autorizados (ej: ['VENTA']).
+ * @param {boolean}  [soloDiaOperativo]       Exige que la orden pertenezca estrictamente al Día Operativo en curso.
+ * @param {object|string} [diaOperativo]      Objeto devuelto por obtenerDiaOperativo() o fecha YYYY-MM-DD.
  */
 export function decidirPublicacion({
   orden = {},
@@ -83,7 +87,9 @@ export function decidirPublicacion({
   estadoLogisticoRequerido = null,
   fechaMinima = null,
   montoMinimo = null,
-  asuntosPermitidos = null
+  asuntosPermitidos = null,
+  soloDiaOperativo = false,
+  diaOperativo = null
 } = {}) {
   const numeroOrden = String(orden.numeroOrden || '').trim();
   if (!numeroOrden) return { publicar: false, motivo: MOTIVOS_PUBLICACION.ORDEN_SIN_NUMERO };
@@ -122,6 +128,14 @@ export function decidirPublicacion({
   // CANDADO 3: Corte de Fecha (no procesar ordenes historicas hacia atras)
   if (fechaMinima && orden.fecha && orden.fecha < fechaMinima) {
     return { publicar: false, motivo: MOTIVOS_PUBLICACION.ORDEN_ANTERIOR_A_FECHA_CORTE };
+  }
+
+  // CANDADO 3B: Día Operativo Estricto (tiempo presente 00:00:00 - 23:59:59)
+  if (soloDiaOperativo) {
+    const fechaHoraCompra = orden.createdtime || orden.fecha;
+    if (!perteneceAlDiaOperativo(fechaHoraCompra, diaOperativo)) {
+      return { publicar: false, motivo: MOTIVOS_PUBLICACION.ORDEN_FUERA_DE_DIA_OPERATIVO };
+    }
   }
 
   if (requerirPdf && !String(urlPdf || '').trim()) return { publicar: false, motivo: MOTIVOS_PUBLICACION.SIN_PDF };

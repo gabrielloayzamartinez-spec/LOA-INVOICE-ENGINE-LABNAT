@@ -219,6 +219,7 @@ process.env.GHL_API_KEY_CENTRAL = PIT;
 process.env.GHL_LOCATION_ID_CENTRAL = LOC;
 process.env.INVOICE_PDF_ENABLED = 'true';
 process.env.INVOICE_LOG_DIR = path.join(TMP, 'logs');
+process.env.INVOICE_LINKS_PATH = path.join(TMP, 'links.json');
 
 const { publicarFacturaDeContacto } = await import('../src/core/invoice_publisher.js');
 const { CLAVES_PUENTE_FACTURA } = await import('../src/core/invoice_bridge.js');

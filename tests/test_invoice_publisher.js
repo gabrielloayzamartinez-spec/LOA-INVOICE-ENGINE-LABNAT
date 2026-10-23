@@ -17,9 +17,13 @@
  * ==============================================================================
  */
 
+import os from 'node:os';
+import path from 'node:path';
 import { crearDepsFactura, publicarFacturaDeContacto, headersCentral, NOMBRES_CAMPOS_FACTURA } from '../src/core/invoice_publisher.js';
 import { crearClienteSesionWeb } from '../src/connectors/vtiger_web_session.js';
 import { CLAVES_PUENTE_FACTURA, TAG_FACTURA_LISTA } from '../src/core/invoice_bridge.js';
+
+process.env.INVOICE_LINKS_PATH = path.join(os.tmpdir(), 'loa-test-pub-links.json');
 
 let passed = 0;
 let failed = 0;

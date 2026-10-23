@@ -227,8 +227,29 @@ const ordenChargeback = decidirPublicacion({
 assert(ordenChargeback.publicar === false && ordenChargeback.motivo === MOTIVOS_PUBLICACION.ORDEN_ASUNTO_NO_FACTURABLE, 'Omite orden con asunto CHARGEBACK');
 
 // ------------------------------------------------------------------------------
+console.log('\n[TEST 14] Candado de Día Operativo: solo compras del día en curso (00:00:00 a 23:59:59)');
+const ordenAyer = decidirPublicacion({
+  orden: { ...ORDEN, createdtime: '2026-10-22 23:59:59', fecha: '2026-10-22', total: '150.00' },
+  estadoActual: {},
+  urlPdf: URL_PDF,
+  soloDiaOperativo: true,
+  diaOperativo: '2026-10-23'
+});
+assert(ordenAyer.publicar === false && ordenAyer.motivo === MOTIVOS_PUBLICACION.ORDEN_FUERA_DE_DIA_OPERATIVO, 'Bloquea orden de día anterior cuando soloDiaOperativo está activo');
+
+const ordenHoyMismoDia = decidirPublicacion({
+  orden: { ...ORDEN, createdtime: '2026-10-23 11:30:00', fecha: '2026-10-23', total: '150.00' },
+  estadoActual: {},
+  urlPdf: URL_PDF,
+  soloDiaOperativo: true,
+  diaOperativo: '2026-10-23'
+});
+assert(ordenHoyMismoDia.publicar === true, 'Permite orden del Día Operativo en curso');
+
+// ------------------------------------------------------------------------------
 console.log('\n==========================================================');
 console.log(` RESULTADO: ${passed} PASS / ${failed} FAIL`);
 console.log('==========================================================\n');
 
 if (failed > 0) process.exitCode = 1;
+
