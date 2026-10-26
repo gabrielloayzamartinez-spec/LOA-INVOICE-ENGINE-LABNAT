@@ -28,6 +28,7 @@
 import http from 'node:http';
 import { recordAuditEvent } from './core/audit.js';
 import { resolverDestinoFactura, guardarEnlaceFactura } from './core/short_links.js';
+import { configFactura } from './config.js';
 
 const LIMITE_BYTES = 64 * 1024;
 
@@ -126,6 +127,62 @@ export function crearServidorEventos({ atender, token, rutaLinks = 'data/links.j
       req.on('error', () => { if (!abortado) responder(400, { ok: false, motivo: 'ERROR_DE_LECTURA' }); });
       return;
     }
+
+    // ---------------------------------------------------------- DIAGNOSTICO
+    // Protegido con el mismo token. No expone secretos: solo la cola del PIT y
+    // el resultado real de una llamada a GHL (asi se distingue "token invalido"
+    // de "contacto inexistente").
+    if (req.method === 'GET' && url.pathname === '/diagnostico') {
+      const recibido = String(req.headers['x-loa-token'] || url.searchParams.get('token') || '');
+      if (!token || recibido !== token) {
+        return responder(401, { ok: false, motivo: 'NO_AUTORIZADO' });
+      }
+
+      (async () => {
+        const cfg = configFactura();
+        const clave = String(cfg.ghl.apiKeyCentral || '');
+        const salida = {
+          ok: true,
+          commit: process.env.RENDER_GIT_COMMIT || null,
+          branch: process.env.RENDER_GIT_BRANCH || null,
+          config: {
+            pdfEnabled: cfg.habilitado,
+            trigger: cfg.webhook.trigger,
+            intervalMin: cfg.escaneo.intervaloMinutos,
+            sede: cfg.escaneo.sede,
+            fechaMinima: cfg.escaneo.fechaMinima,
+            estados: cfg.escaneo.triggerStatus,
+            linksPath: cfg.marca.linksPath
+          },
+          ghl: {
+            host: (() => { try { return new URL(cfg.ghl.baseUrl).host; } catch { return cfg.ghl.baseUrl; } })(),
+            configured: Boolean(clave && cfg.ghl.locationIdCentral),
+            apiKeyTail: clave ? clave.slice(-4) : null,
+            apiKeyLength: clave.length,
+            ping: null
+          },
+          ts: new Date().toISOString()
+        };
+
+        try {
+          const r = await fetch(
+            `${cfg.ghl.baseUrl}/contacts/?locationId=${encodeURIComponent(cfg.ghl.locationIdCentral)}&limit=1`,
+            {
+              headers: { Authorization: `Bearer ${clave}`, Version: '2021-07-28', Accept: 'application/json' },
+              signal: AbortSignal.timeout(8000)
+            }
+          );
+          salida.ghl.ping = { status: r.status, ok: r.ok };
+        } catch (e) {
+          salida.ghl.ping = { status: 0, ok: false, error: String(e.message).slice(0, 140) };
+        }
+
+        responder(200, salida);
+      })();
+
+      return;
+    }
+
 
     // ------------------------------------ REGISTRO DE ENLACE EN VIVO (API)
     if (req.method === 'POST' && url.pathname === '/enlace/registrar') {
