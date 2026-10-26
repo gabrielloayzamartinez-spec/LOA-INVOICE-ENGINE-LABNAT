@@ -189,7 +189,9 @@ export async function atenderEventoCompra({
 
   if (!contactId) {
     const telefono = evento.telefono;
-    if (telefono && buscarContactoGhl) contactId = (await buscarContactoGhl(telefono)) || '';
+    // Pasar { orden, sede } habilita la creacion de contacto en GHL cuando el
+    // numero no existe (solo si GHL respondio bien: nunca crea a ciegas).
+    if (telefono && buscarContactoGhl) contactId = (await buscarContactoGhl(telefono, { orden, sede: sedeEfectiva })) || '';
     if (!contactId) {
       return {
         ok: false,

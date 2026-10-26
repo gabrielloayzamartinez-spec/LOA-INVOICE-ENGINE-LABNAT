@@ -29,6 +29,7 @@ import http from 'node:http';
 import { recordAuditEvent } from './core/audit.js';
 import { resolverDestinoFactura, guardarEnlaceFactura } from './core/short_links.js';
 import { configFactura } from './config.js';
+import { crearClienteSesionWeb, getVtigerWebConfigStatus } from './connectors/vtiger_web_session.js';
 
 const LIMITE_BYTES = 64 * 1024;
 
@@ -161,6 +162,7 @@ export function crearServidorEventos({ atender, token, rutaLinks = 'data/links.j
             apiKeyLength: clave.length,
             ping: null
           },
+          vtiger: { ...getVtigerWebConfigStatus(), webUsername: cfg.vtiger.webUsername || null, webPasswordTail: cfg.vtiger.webPassword ? cfg.vtiger.webPassword.slice(-4) : null, login: null },
           ts: new Date().toISOString()
         };
 
@@ -175,6 +177,16 @@ export function crearServidorEventos({ atender, token, rutaLinks = 'data/links.j
           salida.ghl.ping = { status: r.status, ok: r.ok };
         } catch (e) {
           salida.ghl.ping = { status: 0, ok: false, error: String(e.message).slice(0, 140) };
+        }
+
+        // Prueba de sesion web de vTiger (sin descargar PDF): valida que el login
+        // funcione, que es lo que falla cuando el PDF oficial "no se puede descargar".
+        try {
+          const ws = crearClienteSesionWeb();
+          await ws.asegurarSesion();
+          salida.vtiger.login = { ok: true };
+        } catch (e) {
+          salida.vtiger.login = { ok: false, error: String(e.message).slice(0, 140) };
         }
 
         responder(200, salida);
