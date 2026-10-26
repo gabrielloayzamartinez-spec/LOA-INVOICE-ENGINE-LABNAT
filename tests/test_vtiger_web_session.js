@@ -16,7 +16,8 @@
 import {
   crearClienteSesionWeb, assertAccionWebPermitida, extraerDatosFormularioLogin,
   esPantallaDeLogin, extraerSetCookie, aplicarCookies, construirCabeceraCookie,
-  extraerFolderIdsPdf, esPdf, getVtigerWebConfigStatus, VtigerWebActionViolation
+  extraerFolderIdsPdf, esPdf, getVtigerWebConfigStatus, VtigerWebActionViolation,
+  normalizarRecordExportPdf
 } from '../src/connectors/vtiger_web_session.js';
 
 let passed = 0;
@@ -224,9 +225,12 @@ const rDoc = await clienteDoc.descargarDocumentoOficial({ record: '6x35385', mod
 assert(rDoc.ok === true && esPdf(rDoc.buf) === true, 'Descarga el PDF oficial del documento');
 assert(rDoc.bytes === PDF_MINIMO.length, 'Devuelve los bytes del PDF oficial');
 const urlDoc = falsoDoc.llamadas.find(l => /action=ExportPDF/.test(l.url))?.url || '';
-assert(/action=ExportPDF/.test(urlDoc) && /record=6x35385/.test(urlDoc), 'Pide la accion ExportPDF del registro');
+assert(/action=ExportPDF/.test(urlDoc) && /record=35385\b/.test(urlDoc), 'ExportPDF recibe el CRMID numerico (sin el prefijo "6x")');
 assert(/app=MARKETING/.test(urlDoc), 'Incluye el parametro `app` (sin el, vTiger devuelve HTML en lugar del PDF)');
 assert(!/folderid=/.test(urlDoc), 'No inventa un folderid: usa la URL exacta de la interfaz');
+assert(normalizarRecordExportPdf('6x2855909') === '2855909', 'normalizarRecordExportPdf quita el prefijo de modulo');
+assert(normalizarRecordExportPdf('2855909') === '2855909', 'normalizarRecordExportPdf deja intacto un id numerico');
+assert(normalizarRecordExportPdf('') === '', 'normalizarRecordExportPdf tolera vacio');
 
 const falsoDocMalo = crearVtigerFalso();
 const fetchSinPdf = async (url, init = {}) => {

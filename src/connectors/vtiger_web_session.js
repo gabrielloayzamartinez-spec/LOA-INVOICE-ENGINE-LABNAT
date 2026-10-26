@@ -115,6 +115,18 @@ export function esPdf(buf) {
   return cabecera === '%PDF-';
 }
 
+/**
+ * La accion ExportPDF exige el CRMID NUMERICO, sin el prefijo de modulo.
+ * El webservice devuelve "6x2855909" y ExportPDF responde
+ * "El registro al que pretende acceder no existe" si se envia asi.
+ *   normalizarRecordExportPdf('6x2855909') -> '2855909'
+ */
+export function normalizarRecordExportPdf(record = '') {
+  const crudo = String(record || '').trim();
+  const m = /^\d+x(\d+)$/.exec(crudo);
+  return m ? m[1] : crudo;
+}
+
 /** Estado de configuracion del canal web, SIN lanzar (fail-safe). */
 export function getVtigerWebConfigStatus() {
   const url = env('VTIGER_URL', '');
@@ -264,7 +276,8 @@ export function crearClienteSesionWeb(opts = {}) {
     assertAccionWebPermitida('ExportPDF');
     if (!record) return { ok: false, buf: null, status: 0, motivo: 'SIN_RECORD' };
 
-    const ruta = `index.php?module=${modulo}&action=ExportPDF&record=${encodeURIComponent(record)}&app=${encodeURIComponent(app)}`;
+    const recordPdf = normalizarRecordExportPdf(record);
+    const ruta = `index.php?module=${modulo}&action=ExportPDF&record=${encodeURIComponent(recordPdf)}&app=${encodeURIComponent(app)}`;
     const { status, buf } = await getWeb(ruta, { accion: 'ExportPDF' });
 
     if (!esPdf(buf)) {
@@ -276,7 +289,8 @@ export function crearClienteSesionWeb(opts = {}) {
   /** Descarga el PDF oficial de un registro. */
   async function descargarPdf({ record, modulo = 'SalesOrder', folderId = null } = {}) {
     assertAccionWebPermitida('ExportPDF');
-    const base = `index.php?module=${modulo}&action=ExportPDF&record=${encodeURIComponent(record)}`;
+    const recordPdf = normalizarRecordExportPdf(record);
+    const base = `index.php?module=${modulo}&action=ExportPDF&record=${encodeURIComponent(recordPdf)}`;
     const intentos = folderId ? [`${base}&folderid=${encodeURIComponent(folderId)}`] : [base];
     let ultimoStatus = 0;
 

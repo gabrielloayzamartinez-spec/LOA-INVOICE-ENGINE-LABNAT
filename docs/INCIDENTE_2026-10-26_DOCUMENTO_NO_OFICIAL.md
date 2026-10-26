@@ -66,7 +66,7 @@ Los envíos del 22 y 23 de octubre (68 SMS) salieron con el **PDF oficial** de v
 2. **Etiqueta engañosa.** El log decía "PDF oficial con PDFKit": quien supervisaba no podía distinguir el documento propio del oficial.
 3. **Pre-flight insuficiente.** El candado `verificarEnlaceSincronizado` solo comprobaba que el enlace devolviera *un* PDF, no que fuera el oficial.
 4. **Respaldo peligroso.** El publicador aceptaba un PDF sin marca de origen (`oficial`), por lo que un "fallback" podía publicarse y marcar el contacto → el workflow de GHL enviaba el documento equivocado.
-5. **Sesión web de vTiger frágil.** Se registraron **52 `WEB_LOGIN_REJECTED`** y **52 `EXCEPCION_DESCARGA`**; cuando falla el login del ExportPDF no hay documento oficial posible. `data/RENDER_ENV.txt` tiene `VTIGER_WEB_PASSWORD=GABRIEL1520` mientras `.env` usa una clave larga: una de las dos es incorrecta.
+5. **Defecto crítico: ExportPDF recibía el identificador equivocado.** vTiger devuelve el CRMID como `6x2855909`, pero la acción `ExportPDF` exige el número puro (`2855909`). Con el prefijo responde `{"success":false,"error":{"code":"El registro al que pretende acceder no existe"}}`. **La descarga del PDF oficial nunca funcionó**, así que el sistema caía siempre en la plantilla propia. Corregido con `normalizarRecordExportPdf()` y verificado: las órdenes `S-97782`, `S-97530` y `S-97616` ya descargan ~1 MB de PDF oficial cada una.
 
 ---
 
@@ -77,6 +77,7 @@ Los envíos del 22 y 23 de octubre (68 SMS) salieron con el **PDF oficial** de v
 | `src/core/invoice_delivery.js` | **Candado default-deny**: si `pdf.oficial !== true` se rechaza con `PDF_NO_OFICIAL` **antes** de subir y antes de marcar el contacto. Nuevo motivo y paso `pdf_no_oficial`. |
 | `src/connectors/ghl_messages.js` | **SMS directo prohibido en Render**: si `RENDER=true` y no hay `INVOICE_ALLOW_DIRECT_SMS=true`, bloquea y audita `INVOICE_SMS_BLOQUEADO_GOBERNANZA`. |
 | `src/config.js` | `INVOICE_PDF_FALLBACK_PROPIO` pasa a **default `false`** y queda marcado como deprecado. |
+| `src/connectors/vtiger_web_session.js` | **Fix de raíz**: `normalizarRecordExportPdf()` convierte `6x2855909` → `2855909` en `descargarDocumentoOficial`, `descargarPdf` y `descargarPdfAuto`. Sin esto el ExportPDF siempre fallaba. |
 | `src/webhook_server.js` | `/salud` expone `commit` y `branch` (`RENDER_GIT_COMMIT`); `PDF_NO_OFICIAL` se trata como fallo temporal (503, reintentable). |
 | `tests/test_invoice_delivery.js` | Nuevo **TEST 11**: un PDF no oficial no se sube ni se marca. Suite: **44 PASS / 0 FAIL**. |
 | `scripts/remediar_documentos_oficiales.js` | Script de corrección: descarga el ExportPDF oficial, lo sube, **reemplaza el enlace ya enviado** y lo registra en Render. |
@@ -122,9 +123,9 @@ El script **nunca genera PDFs**: solo acepta el que devuelve `ExportPDF` de vTig
 | GHL (envío) | 145 SMS con `MsgId` real devuelto por la API | ✅ Operativo |
 | GHL (Media Library) | PDFs subidos y servidos por `assets.cdn.filesafe.space` | ✅ Operativo |
 | vTiger (ExportPDF) | PDFs oficiales de 2 páginas para S-97555/57/89/90/97612/97618 | ✅ Funcionó el 22–23 oct |
-| vTiger (sesión web) | 52 `WEB_LOGIN_REJECTED` | ⚠️ Intermitente / credencial dudosa |
+| vTiger (sesión web) | Login correcto; el ExportPDF fallaba por el CRMID con prefijo `6x` | ✅ Corregido y verificado (3 órdenes, ~1 MB c/u) |
 
-**Antes de la remediación hay que resolver la credencial web de vTiger**; si el login sigue rechazando, el script reportará `PDF_OFICIAL_NO_DISPONIBLE` en todas las órdenes y no corregirá ninguna.
+**El bloqueo ya está resuelto**: no era la contraseña (el login funciona), era el formato del CRMID. El modo simulación descarga el PDF oficial de las 3 órdenes de prueba; queda ejecutar la remediación completa.
 
 ---
 
@@ -132,12 +133,11 @@ El script **nunca genera PDFs**: solo acepta el que devuelve `ExportPDF` de vTig
 
 | # | Acción | Responsable |
 |---|---|---|
-| 1 | Confirmar en Render que el deploy es `2d33263` (o el nuevo commit) — revisar `https://facturas.labnaturales.com/salud` tras desplegar | Usuario |
-| 2 | Corregir `VTIGER_WEB_PASSWORD` (`.env` vs `RENDER_ENV.txt`) y validar con el modo simulación | Usuario |
-| 3 | Ejecutar remediación `--aplicar` y commitear `links.json` | Usuario |
-| 4 | Decidir si se envía el SMS correctivo (requiere aprobación explícita) | Usuario |
-| 5 | Purgar de la Media Library los 77 PDFs no oficiales (siguen accesibles por UUID directo) | Usuario |
-| 6 | Añadir el commit a `/salud` y verificar el deploy (ya implementado, pendiente de push) | Usuario |
+| 1 | Confirmar que Render desplegó `895cf78`/siguiente — revisar `https://facturas.labnaturales.com/salud` (ya expone `commit`) | Usuario |
+| 2 | Ejecutar remediación `--aplicar` sobre las 77 órdenes y commitear `links.json` | Usuario / agente |
+| 3 | Decidir si se envía el SMS correctivo (requiere aprobación explícita) | Usuario |
+| 4 | Purgar de la Media Library los 77 PDFs no oficiales (siguen accesibles por UUID directo) | Usuario |
+| 5 | Revisar `data/RENDER_ENV.txt` (obsoleto, con `VTIGER_WEB_PASSWORD` distinto) y retirarlo | Usuario |
 
 ### Invariantes de gobernanza que ahora deben cumplirse siempre
 

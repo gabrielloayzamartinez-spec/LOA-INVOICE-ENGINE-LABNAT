@@ -189,7 +189,8 @@ async function main() {
 
       if (!pdf.ok || !pdf.buf || !esPdf(pdf.buf) || pdf.buf.length < 1000) {
         registro.motivo = pdf.motivo || 'PDF_OFICIAL_INVALIDO';
-        console.log(`${cabecera} -> FALLO OFICIAL: ${registro.motivo}`);
+        registro.detalle = pdf.detalle || null;
+        console.log(`${cabecera} -> FALLO OFICIAL: ${registro.motivo}${pdf.detalle ? ` | ${String(pdf.detalle).slice(0, 160)}` : ''}`);
         resultados.push(registro);
         continue;
       }
