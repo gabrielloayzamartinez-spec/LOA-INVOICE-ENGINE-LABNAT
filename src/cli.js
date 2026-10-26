@@ -36,6 +36,7 @@ import { atenderEventoCompra } from './jobs/atender_evento.js';
 import { iniciarServidorEventos } from './webhook_server.js';
 import { generarReporteDiario } from './core/daily_report.js';
 import { obtenerDiaOperativo, verificarCambioDia } from './core/dia_operativo.js';
+import { obtenerAtencionSede } from './core/sedes.js';
 
 cargarEnv();
 const cfg = configFactura();
@@ -58,8 +59,8 @@ function clienteVtiger() {
   return crearClienteVtiger({ url: cfg.vtiger.url, username: cfg.vtiger.username, accessKey: cfg.vtiger.accessKey });
 }
 
-/** Busca el contacto en GHL por telefono (query / search). Devuelve el id o null. */
-async function buscarContactoGhl(telefono, { fetchImpl = null } = {}) {
+/** Busca el contacto en GHL por telefono (query / search). Si no existe y viene la orden, lo crea. Devuelve el id o null. */
+async function buscarContactoGhl(telefono, { fetchImpl = null, orden = null, sede = null } = {}) {
   if (!telefono) return null;
   const headers = headersCentral(cfg.ghl.apiKeyCentral);
   const enviar = fetchImpl || ((u, o) => ghlFetch(u, o, 1, 'InvoiceLookup'));
@@ -86,6 +87,32 @@ async function buscarContactoGhl(telefono, { fetchImpl = null } = {}) {
     } catch {
       /* prueba la siguiente variante */
     }
+  }
+
+  // Si no se encontro y viene orden, crear el contacto para que la orden no quede huerfana
+  if (orden && (orden.nombreCliente || orden.apellidoCliente)) {
+    try {
+      const atencion = obtenerAtencionSede(sede || orden.sede);
+      const telE164 = digitos.length === 10 ? `+1${digitos}` : (digitos.startsWith('1') && digitos.length === 11 ? `+${digitos}` : `+${digitos}`);
+      const bodyCreate = {
+        firstName: orden.nombreCliente || 'Cliente',
+        lastName: orden.apellidoCliente || '',
+        name: [orden.nombreCliente, orden.apellidoCliente].filter(Boolean).join(' ').trim(),
+        phone: telE164,
+        locationId: cfg.ghl.locationIdCentral,
+        tags: ['vtiger', `sede_${atencion.clave.toLowerCase()}`]
+      };
+      const resCreate = await enviar(`${cfg.ghl.baseUrl}/contacts/`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(bodyCreate)
+      });
+      if (resCreate.ok) {
+        const textoCreate = await (resCreate.text ? resCreate.text().catch(() => '') : Promise.resolve(''));
+        const cuerpoCreate = JSON.parse(textoCreate || '{}');
+        return cuerpoCreate?.contact?.id || null;
+      }
+    } catch {}
   }
 
   return null;
@@ -281,9 +308,42 @@ async function comandoServe() {
   linea(`  Salud         : GET  ${url}/salud`);
   linea(`  Factura (GET) : ${url}/:numeroOrden   (ej: ${url}/S-97576)`);
   linea(`  Evento (POST) : ${url}/evento/compra   (header: x-loa-token)`);
+
+  // --- MOTOR AUTONOMO CONTINUO EN LA NUBE (RENDER) ---
+  if (cfg.habilitado && cfg.escaneo.intervaloMinutos > 0) {
+    linea(`\n  🚀 ACTIVANDO MOTOR AUTÓNOMO EN RENDER: escaneo cada ${cfg.escaneo.intervaloMinutos} minuto(s)`);
+    const rutaCursor = cfg.escaneo.cursorPath;
+    let ejecutando = false;
+
+    const correrCicloAutonomo = async () => {
+      if (ejecutando) {
+        linea('  [AUTO-SCAN] Ciclo previo aún en curso, esperando próximo turno...');
+        return;
+      }
+      ejecutando = true;
+      try {
+        const cursor = cargarCursor(rutaCursor);
+        await unCiclo({ cursor, rutaCursor });
+      } catch (err) {
+        recordAuditEvent({
+          type: 'INVOICE_CICLO_FALLIDO',
+          severity: 'error',
+          message: `Fallo ciclo autónomo en Render: ${err.message}`
+        });
+        linea(`  [AUTO-SCAN ERROR] ${err.message}`);
+      } finally {
+        ejecutando = false;
+      }
+    };
+
+    // Primer escaneo tras 10s de arranque seguro
+    setTimeout(correrCicloAutonomo, 10000);
+    // Ciclos continuos recurrentes
+    setInterval(correrCicloAutonomo, cfg.escaneo.intervaloMinutos * 60 * 1000);
+  }
+
   linea('');
-  linea('  Este endpoint NO barre la base: recibe UNA venta y publica ESA factura.');
-  linea('  Ctrl+C para detener.');
+  linea('  Servidor y motor autónomo activos.');
 }
 
 // ------------------------------------------------------------------------------

@@ -22,9 +22,9 @@ services:
       - key: NODE_VERSION
         value: "20"
 
-      # --- Interruptor general (poner en true cuando la prueba este validada) ---
+      # --- Interruptor general (ACTIVADO EN PRODUCCIÓN) ---
       - key: INVOICE_PDF_ENABLED
-        value: "false"
+        value: "true"
 
       # --- vTiger (webservice, SOLO LECTURA) ---
       - key: VTIGER_URL
@@ -39,6 +39,8 @@ services:
         sync: false
       - key: INVOICE_PDF_SOURCE
         value: vtiger
+      - key: INVOICE_PDF_FALLBACK_PROPIO
+        value: "true"
 
       # --- GHL Cuenta Empresa ---
       - key: GHL_API_KEY_CENTRAL
@@ -48,9 +50,17 @@ services:
       - key: GHL_BASE_URL
         value: https://services.leadconnectorhq.com
 
-      # --- Disparador y deteccion fail-safe ---
+      # --- Envio Automatico de SMS ---
+      - key: INVOICE_AUTO_SEND_SMS
+        value: "true"
+      - key: INVOICE_SMS_FROM_NUMBER
+        value: "+17868828446"
+
+      # --- Disparador hibrido y escaneo autonomo continuo ---
       - key: INVOICE_TRIGGER
-        value: evento
+        value: hibrido
+      - key: INVOICE_SCAN_INTERVAL_MINUTES
+        value: "5"
       - key: INVOICE_WEBHOOK_TOKEN
         sync: false
       - key: INVOICE_SCAN_SEDE
@@ -58,9 +68,11 @@ services:
       - key: INVOICE_ESTADO_COMPRA
         value: VENDIDO
       - key: INVOICE_TRIGGER_STATUS
-        value: VERIFICADA
+        value: "VERIFICADA,ENVIADA"
       - key: INVOICE_FECHA_MINIMA
-        value: "2026-10-21"
+        value: "HOY"
+      - key: INVOICE_SOLO_HOY
+        value: "true"
       - key: INVOICE_MIN_AMOUNT
         value: "1.00"
       - key: INVOICE_ALLOWED_SUBJECTS
@@ -74,11 +86,11 @@ services:
 
       # --- Estado persistente (el cursor vive en data/cursor.json) ---
       - key: INVOICE_CURSOR_PATH
-        value: /var/data/cursor.json
+        value: data/cursor.json
       - key: INVOICE_LOG_DIR
-        value: /var/data/logs
+        value: data/logs
       - key: INVOICE_PIPELINE_PATH
-        value: /var/data/pipeline.jsonl
+        value: data/pipeline.jsonl
 
 # Disco persistente: sin el, el cursor se pierde en cada deploy (no es critico:
 # el campo `Factura Nº Orden` de GHL sigue evitando duplicados, pero se pierde

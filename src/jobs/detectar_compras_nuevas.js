@@ -263,7 +263,7 @@ export async function detectarOrdenesVerificadas({
     ? clausulaSqlDiaOperativo(diaOperativo, 'createdtime')
     : `createdtime >= '${escaparValor(diaOperativo.fecha)} 00:00:00'`;
 
-  const sql = `SELECT ${ORDEN_SELECT.join(', ')} FROM SalesOrder WHERE cf_882 IN ('VERIFICADA', 'ENVIADA.....') AND ${condicionFecha}${condicionSede} ORDER BY createdtime ASC LIMIT ${lote}`;
+  const sql = `SELECT ${ORDEN_SELECT.join(', ')} FROM SalesOrder WHERE cf_882 IN ('VERIFICADA', 'ENVIADA.....') AND ${condicionFecha}${condicionSede} ORDER BY createdtime ASC LIMIT ${Math.max(lote, 100)}`;
 
   let ordenes = [];
   try {
@@ -354,7 +354,7 @@ export async function detectarOrdenesVerificadas({
     let contactId = null;
     if (buscarContactoGhl && telefono) {
       try {
-        contactId = await buscarContactoGhl(telefono);
+        contactId = await buscarContactoGhl(telefono, { orden, sede: orden.sede });
       } catch (e) {
         resultado.errores.push({ ordenId: orden.id, etapa: 'contacto_ghl', detalle: e.message });
         continue;
@@ -412,7 +412,8 @@ export async function ejecutarCiclo({
   const publicaciones = [];
   let marcadas = 0;
 
-  for (const candidato of deteccion.candidatos) {
+  for (let i = 0; i < deteccion.candidatos.length; i++) {
+    const candidato = deteccion.candidatos[i];
     let resultado;
     try {
       resultado = await publicar(candidato);
@@ -425,6 +426,11 @@ export async function ejecutarCiclo({
       marcadas++;
     }
     publicaciones.push({ ...candidato, resultado });
+
+    // Pausa de seguridad de 15 segundos entre publicaciones
+    if (i < deteccion.candidatos.length - 1) {
+      await new Promise(r => setTimeout(r, 15000));
+    }
   }
 
   cursor.ultimaCorrida = new Date().toISOString();
