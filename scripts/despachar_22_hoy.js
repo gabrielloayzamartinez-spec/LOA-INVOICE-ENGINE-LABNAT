@@ -1,3 +1,4 @@
+throw new Error('BLOQUEADO POR GOBERNANZA: Prohibido generar facturas no oficiales y enviar SMS directos.');
 import { cargarEnv, configFactura } from '../src/config.js';
 import { headersCentral, resolverCamposPuente, escribirCamposPuente, agregarTagsContacto } from '../src/core/invoice_publisher.js';
 import { enviarMensajeFacturaGhl, construirTextoMensaje, formatearNombreCompleto } from '../src/connectors/ghl_messages.js';

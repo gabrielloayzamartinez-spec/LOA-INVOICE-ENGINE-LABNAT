@@ -20,8 +20,6 @@ import { crearClienteSesionWeb } from '../connectors/vtiger_web_session.js';
 import { subirPdfAMediaLibrary, baseGhl } from '../connectors/ghl_media.js';
 import { entregarFacturaDeOrden } from './invoice_delivery.js';
 import { CLAVES_PUENTE_FACTURA, TAG_FACTURA_ENVIADA } from './invoice_bridge.js';
-import { generarFacturaPdf, contactoParaInvoice, EMPRESA_POR_DEFECTO } from './invoice_render.js';
-import { enviarMensajeFacturaGhl, construirTextoMensaje } from '../connectors/ghl_messages.js';
 import { recordAuditEvent } from './audit.js';
 
 /** Nombres EXACTOS de los campos puente en GHL. */
@@ -141,37 +139,19 @@ export async function agregarTagsContacto(contactId, tags, { headers, fetchImpl 
 export function crearDepsFactura({ apiKeyCentral, locationIdCentral, fetchImpl = null, clienteSesionWeb = null, empresa = {}, pdf = null } = {}) {
   const headers = headersCentral(apiKeyCentral);
   const cfg = configFactura();
-  const opcionesPdf = pdf || cfg.pdf || { fuente: 'vtiger', app: 'MARKETING', fallbackPropio: true };
+  const opcionesPdf = pdf || cfg.pdf || { fuente: 'vtiger', app: 'MARKETING' };
   const cliente = clienteSesionWeb || crearClienteSesionWeb(fetchImpl ? { fetchImpl } : {});
 
-  /** Genera el PDF con la plantilla propia (via de respaldo). */
-  const generarPropio = async ({ orden, contacto }) => {
-    const clienteDoc = contactoParaInvoice({ contacto, orden });
-    const buf = await generarFacturaPdf({ orden, contacto: clienteDoc, empresa: { ...EMPRESA_POR_DEFECTO, ...empresa } });
-    return { ok: true, buf, generado: true };
-  };
-
   return {
-    // ORIGEN DEL PDF (INVOICE_PDF_SOURCE):
-    //   'vtiger' -> PDF OFICIAL de vTiger (accion ExportPDF). Trae el logo, la tabla
-    //               completa de productos y los totales ya aprobados. Es UNA peticion
-    //               por factura y la sesion web se reutiliza (single-flight), por lo
-    //               que NO satura la API de vTiger.
-    //   'propio' -> plantilla del motor (respaldo, sin depender del canal web).
-    descargarPdf: async ({ orden, contacto }) => {
-      if (opcionesPdf.fuente === 'vtiger') {
-        try {
-          const r = await cliente.descargarDocumentoOficial({ record: orden.id, modulo: 'SalesOrder', app: opcionesPdf.app });
-          if (r.ok) return { ok: true, buf: r.buf, oficial: true, bytes: r.bytes };
-          if (!opcionesPdf.fallbackPropio) return { ok: false, motivo: 'PDF_OFICIAL_NO_DISPONIBLE', detalle: r.motivo };
-        } catch (e) {
-          if (!opcionesPdf.fallbackPropio) return { ok: false, motivo: 'PDF_OFICIAL_FALLIDO', detalle: e.message };
-        }
-      }
+    // ORIGEN DEL PDF: ESTRICTAMENTE EL DOCUMENTO OFICIAL DE VTIGER (ExportPDF)
+    // PROHIBIDO generar facturas no oficiales o con plantillas locales de respaldo.
+    descargarPdf: async ({ orden }) => {
       try {
-        return await generarPropio({ orden, contacto });
+        const r = await cliente.descargarDocumentoOficial({ record: orden.id, modulo: 'SalesOrder', app: opcionesPdf.app || 'MARKETING' });
+        if (r.ok && r.buf) return { ok: true, buf: r.buf, oficial: true, bytes: r.bytes };
+        return { ok: false, motivo: 'PDF_OFICIAL_NO_DISPONIBLE', detalle: r.motivo || 'vTiger no devolvio el PDF oficial' };
       } catch (e) {
-        return { ok: false, motivo: 'GENERACION_PDF_FALLIDA', detalle: e.message };
+        return { ok: false, motivo: 'PDF_OFICIAL_FALLIDO', detalle: e.message };
       }
     },
 
@@ -183,56 +163,13 @@ export function crearDepsFactura({ apiKeyCentral, locationIdCentral, fetchImpl =
       fetchImpl
     }),
 
-    escribirContacto: async ({ contactId, customFields, tags, orden, url, contactoGhl }) => {
+    // GOBERNANZA: El motor SOLO escribe los campos y asigna el tag FACTURA_LISTA.
+    // NUNCA envía SMS directos al cliente por API. El flujo de comunicación vive en GHL Workflow.
+    escribirContacto: async ({ contactId, customFields, tags }) => {
       const campos = await escribirCamposPuente(contactId, customFields, { headers, fetchImpl });
       if (!campos.ok) return { ok: false, detalle: `customFields: ${campos.detalle || campos.status}` };
       const etiquetas = await agregarTagsContacto(contactId, tags, { headers, fetchImpl });
       if (!etiquetas.ok) return { ok: false, detalle: `tags: ${etiquetas.detalle || etiquetas.status}` };
-
-      // Envio directo por API de GHL (si esta configurado INVOICE_AUTO_SEND_SMS=true)
-      const cfgActual = configFactura();
-      if (cfgActual.mensaje?.autoEnviar && url) {
-        const nombreVtiger = [orden?.nombreCliente, orden?.apellidoCliente].filter(Boolean).join(' ').trim();
-        const nombreGhl = contactoGhl?.name || [contactoGhl?.firstName, contactoGhl?.lastName].filter(Boolean).join(' ').trim() || contactoGhl?.contactName || '';
-        const nombreCompleto = nombreVtiger || nombreGhl || 'cliente';
-
-        const texto = construirTextoMensaje({
-          nombre: orden?.nombreCliente || contactoGhl?.firstName || nombreCompleto,
-          apellido: orden?.apellidoCliente || contactoGhl?.lastName || '',
-          nombreCompleto,
-          numeroOrden: orden?.numeroOrden || '',
-          urlPdf: url,
-          sede: orden?.sede || '',
-          plantilla: cfgActual.mensaje.plantilla
-        });
-        const msgRes = await enviarMensajeFacturaGhl({
-          contactId,
-          mensaje: texto,
-          apiKey: apiKeyCentral,
-          tipo: cfgActual.mensaje.tipo || 'SMS',
-          validarEnlace: true,
-          urlAValidar: url,
-          fetchImpl
-        });
-        if (msgRes.ok) {
-          await agregarTagsContacto(contactId, [TAG_FACTURA_ENVIADA], { headers, fetchImpl });
-          try {
-            recordAuditEvent({
-              type: 'INVOICE_SMS_ENVIADO',
-              severity: 'info',
-              message: `SMS de factura ${orden?.numeroOrden || ''} enviado al cliente (messageId: ${msgRes.messageId})`
-            });
-          } catch {}
-        } else {
-          try {
-            recordAuditEvent({
-              type: 'INVOICE_SMS_FALLIDO',
-              severity: 'warn',
-              message: `Fallo envio directo de SMS para ${orden?.numeroOrden || ''}: ${msgRes.detalle || msgRes.motivo}`
-            });
-          } catch {}
-        }
-      }
 
       return { ok: true, detalle: null };
     }

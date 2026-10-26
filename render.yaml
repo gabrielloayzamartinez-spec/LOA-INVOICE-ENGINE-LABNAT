@@ -40,7 +40,7 @@ services:
       - key: INVOICE_PDF_SOURCE
         value: vtiger
       - key: INVOICE_PDF_FALLBACK_PROPIO
-        value: "true"
+        value: "false"
 
       # --- GHL Cuenta Empresa ---
       - key: GHL_API_KEY_CENTRAL
@@ -50,9 +50,9 @@ services:
       - key: GHL_BASE_URL
         value: https://services.leadconnectorhq.com
 
-      # --- Envio Automatico de SMS ---
+      # --- Envio Automatico de SMS (PROHIBIDO: Gobernanza exclusiva de GHL Workflow) ---
       - key: INVOICE_AUTO_SEND_SMS
-        value: "true"
+        value: "false"
       - key: INVOICE_SMS_FROM_NUMBER
         value: "+17868828446"
 
