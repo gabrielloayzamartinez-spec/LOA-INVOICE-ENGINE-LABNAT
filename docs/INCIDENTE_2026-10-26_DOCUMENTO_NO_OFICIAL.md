@@ -1,7 +1,7 @@
 # Incidente 2026-10-26 — Envío de SMS con documento NO oficial
 
 - **Severidad:** Alta (comunicación masiva a clientes con documento no oficial)
-- **Estado:** contenido en código; remediación de enlaces preparada y pendiente de ejecución
+- **Estado:** **remediado** — 77/77 enlaces ya sirven el PDF oficial (verificado 26/10 19:05 UTC). Pendiente: que Render despliegue el código nuevo y decidir el SMS correctivo.
 - **Commit base:** `2d33263` (endurecimiento inicial) + parches de esta sesión (sin commit aún)
 - **Documento afectado:** PDF generado con la plantilla propia (`pdfkit`), no el ExportPDF de vTiger
 
@@ -114,6 +114,14 @@ git commit -m "fix(incidente): reemplazar PDFs no oficiales por el ExportPDF ofi
 
 El script **nunca genera PDFs**: solo acepta el que devuelve `ExportPDF` de vTiger, valida `%PDF` y tamaño mínimo, y escribe un reporte en `scratch/remediacion_<fecha>.json`.
 
+### Resultado de la ejecución (26/10/2026, 18:52–19:04 UTC)
+
+- **77/77 enlaces reemplazados**, 0 fallos.
+- Cada PDF oficial pesa ~1.008.900 bytes (2 páginas) frente a ~1 página de la plantilla.
+- Render confirmó `enlace: VERIFICADO` en los 77.
+- Verificación independiente: `https://facturas.labnaturales.com/S-97782` ya entrega `Órdenes de venta: S-97782`, códigos `PDT241/PDT244/PDT189`, `total general: 300.00`, 2 páginas.
+- `data/links.json` versionado y subido en el commit `bd3707c`.
+
 ---
 
 ## 6. Verificación de la conexión GHL ↔ vTiger
@@ -131,13 +139,13 @@ El script **nunca genera PDFs**: solo acepta el que devuelve `ExportPDF` de vTig
 
 ## 7. Pendientes y riesgos residuales
 
-| # | Acción | Responsable |
-|---|---|---|
-| 1 | Confirmar que Render desplegó `895cf78`/siguiente — revisar `https://facturas.labnaturales.com/salud` (ya expone `commit`) | Usuario |
-| 2 | Ejecutar remediación `--aplicar` sobre las 77 órdenes y commitear `links.json` | Usuario / agente |
-| 3 | Decidir si se envía el SMS correctivo (requiere aprobación explícita) | Usuario |
-| 4 | Purgar de la Media Library los 77 PDFs no oficiales (siguen accesibles por UUID directo) | Usuario |
-| 5 | Revisar `data/RENDER_ENV.txt` (obsoleto, con `VTIGER_WEB_PASSWORD` distinto) y retirarlo | Usuario |
+| # | Acción | Responsable | Estado |
+|---|---|---|---|
+| 1 | **Desplegar en Render** el commit `bd3707c` (Manual Deploy): a las 19:04 UTC `/salud` seguía sin devolver `commit`, señal de que `autoDeploy` no disparó | Usuario | ⏳ Pendiente |
+| 2 | Reemplazo de los 77 enlaces por el PDF oficial | Agente | ✅ Hecho (77/77) |
+| 3 | Decidir si se envía el SMS correctivo (requiere aprobación explícita) | Usuario | ⏳ Pendiente |
+| 4 | Purgar de la Media Library los 77 PDFs no oficiales (siguen accesibles por UUID directo) | Usuario | ⏳ Pendiente |
+| 5 | Revisar `data/RENDER_ENV.txt` (obsoleto, con `VTIGER_WEB_PASSWORD` distinto) y retirarlo | Usuario | ⏳ Pendiente |
 
 ### Invariantes de gobernanza que ahora deben cumplirse siempre
 
