@@ -30,7 +30,7 @@ const FIELD_IDS = { [CLAVES_PUENTE_FACTURA.urlFacturaPdf]: 'F_URL', [CLAVES_PUEN
 const CONTACT_ID = 'abc123contacto';
 
 /** Dependencias simuladas con contadores y captura de argumentos. */
-function crearDeps({ pdfOk = true, pdfLanza = false, mediaOk = true, mediaMotivo = 'TOKEN_INVALIDO', escrituraOk = true } = {}) {
+function crearDeps({ pdfOk = true, pdfLanza = false, oficial = true, mediaOk = true, mediaMotivo = 'TOKEN_INVALIDO', escrituraOk = true } = {}) {
   const llamadas = [];
   const capturado = {};
   return {
@@ -40,7 +40,9 @@ function crearDeps({ pdfOk = true, pdfLanza = false, mediaOk = true, mediaMotivo
         llamadas.push('descargarPdf');
         capturado.descarga = args;
         if (pdfLanza) throw new Error('ECONNRESET con vTiger');
-        return pdfOk ? { ok: true, buf: PDF, folderId: '7' } : { ok: false, motivo: 'WEB_LOGIN_REJECTED' };
+        return pdfOk
+          ? { ok: true, buf: PDF, oficial, origen: oficial ? 'vtiger' : 'plantilla_propia', folderId: '7' }
+          : { ok: false, motivo: 'WEB_LOGIN_REJECTED' };
       },
       subirPdf: async (args) => {
         llamadas.push('subirPdf');
@@ -158,6 +160,16 @@ const t10 = crearDeps();
 const r10 = await entregarFacturaDeOrden({ orden: ORDEN, contactId: CONTACT_ID, fieldIds: {}, deps: t10.deps, habilitado: true });
 assert(r10.motivo === MOTIVOS_ENTREGA.DEPS_INCOMPLETAS, 'Sin campos puente resueltos NO se escribe nada (no se dispara el workflow a ciegas)');
 assert(!t10.llamadas.includes('escribirContacto'), 'No se llama a la escritura sin campos');
+
+// ------------------------------------------------------------------------------
+console.log('\n[TEST 11] GOBERNANZA: PDF no oficial se rechaza (ni se sube ni se marca)');
+const t11 = crearDeps({ oficial: false });
+const r11 = await entregarFacturaDeOrden({ orden: ORDEN, contactId: CONTACT_ID, fieldIds: FIELD_IDS, deps: t11.deps, habilitado: true });
+assert(r11.motivo === MOTIVOS_ENTREGA.PDF_NO_OFICIAL, 'PDF sin origen oficial -> PDF_NO_OFICIAL');
+assert(r11.publicado === false, 'No se reporta publicado');
+assert(!t11.llamadas.includes('subirPdf'), 'NO se sube el documento no oficial a la Media Library');
+assert(!t11.llamadas.includes('escribirContacto'), 'NO se marca el contacto (el workflow de GHL no puede enviar nada)');
+assert(r11.pasos.includes('pdf_no_oficial'), 'El rechazo queda trazado');
 
 // ------------------------------------------------------------------------------
 console.log('\n==========================================================');

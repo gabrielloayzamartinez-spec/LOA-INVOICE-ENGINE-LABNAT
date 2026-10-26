@@ -123,8 +123,10 @@ export function configFactura() {
       fuente: String(env('INVOICE_PDF_SOURCE', 'vtiger')).toLowerCase(),
       // Parametro `app` que exige la accion ExportPDF (verificado contra la UI real).
       app: env('VTIGER_WEB_APP', 'MARKETING'),
-      // Si el PDF oficial falla, generar localmente en lugar de no publicar nada.
-      fallbackPropio: envBool('INVOICE_PDF_FALLBACK_PROPIO', true)
+      // DEPRECADO Y PROHIBIDO: el motor solo publica el PDF OFICIAL de vTiger.
+      // Se conserva la lectura por compatibilidad, pero NUNCA habilita respaldo
+      // local (el publicador lo ignora). Default: false.
+      fallbackPropio: envBool('INVOICE_PDF_FALLBACK_PROPIO', false)
     },
     mensaje: {
       // Si es true, el motor envia el SMS directamente via API de GHL.

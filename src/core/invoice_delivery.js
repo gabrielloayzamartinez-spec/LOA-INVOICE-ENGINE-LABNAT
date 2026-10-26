@@ -34,6 +34,7 @@ export const MOTIVOS_ENTREGA = {
   ORDEN_INVALIDA: 'ORDEN_INVALIDA',
   YA_PUBLICADA: 'YA_PUBLICADA',
   PDF_NO_DISPONIBLE: 'PDF_NO_DISPONIBLE',
+  PDF_NO_OFICIAL: 'PDF_NO_OFICIAL',
   MEDIA_NO_DISPONIBLE: 'MEDIA_NO_DISPONIBLE',
   ESCRITURA_FALLIDA: 'ESCRITURA_FALLIDA',
   DEPS_INCOMPLETAS: 'DEPS_INCOMPLETAS'
@@ -114,7 +115,7 @@ export async function entregarFacturaDeOrden({
   }
   resultado.pasos.push('corte_temprano_ok');
 
-  // 3. PDF del invoice (generado en el motor con la plantilla propia).
+  // 3. PDF del invoice: SOLO el documento OFICIAL de vTiger (ExportPDF).
   let pdf = null;
   try {
     pdf = await deps.descargarPdf({ orden, numeroOrden: resultado.numeroOrden, contacto: contactoGhl });
@@ -130,6 +131,22 @@ export async function entregarFacturaDeOrden({
     return { ...resultado, motivo: MOTIVOS_ENTREGA.PDF_NO_DISPONIBLE, detalle: pdf?.motivo || pdf?.detalle || null, pasos: [...resultado.pasos, 'pdf_fallido'] };
   }
   resultado.pasos.push('pdf_ok');
+
+  // 3.b CANDADO DE GOBERNANZA (default-deny): el documento DEBE venir del
+  // ExportPDF oficial de vTiger. Cualquier PDF generado localmente (plantilla
+  // propia / "fallback") se rechaza ANTES de subirlo y ANTES de marcar el
+  // contacto, de modo que el workflow de GHL nunca pueda enviar un documento
+  // que no sea el oficial.
+  if (pdf.oficial !== true) {
+    marcarPipeline('FALLO_PDF_NO_OFICIAL', { motivo: 'PDF_NO_OFICIAL' });
+    auditar({
+      type: 'INVOICE_PDF_RECHAZADO_NO_OFICIAL', severity: 'error', sede,
+      vTigerId: orden.id,
+      message: `Entrega BLOQUEADA de ${resultado.numeroOrden}: el PDF no es el documento oficial de vTiger (origen: ${pdf.origen || 'desconocido'}). No se sube ni se marca el contacto.`
+    });
+    return { ...resultado, motivo: MOTIVOS_ENTREGA.PDF_NO_OFICIAL, detalle: 'El PDF no es el documento oficial de vTiger (ExportPDF).', pasos: [...resultado.pasos, 'pdf_no_oficial'] };
+  }
+  resultado.pasos.push('pdf_oficial_ok');
   marcarPipeline('PDF_OBTENIDO');
 
   // 4. Publicacion en la Media Library.

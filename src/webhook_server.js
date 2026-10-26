@@ -33,7 +33,7 @@ const LIMITE_BYTES = 64 * 1024;
 
 /** Motivos que ameritan que el emisor reintente (503) o no (200/422). */
 const EXITO = new Set(['PUBLICADA']);
-const FALLO_TEMPORAL = new Set(['MEDIA_NO_DISPONIBLE', 'ESCRITURA_FALLIDA', 'PDF_NO_DISPONIBLE', 'DEPS_INCOMPLETAS']);
+const FALLO_TEMPORAL = new Set(['MEDIA_NO_DISPONIBLE', 'ESCRITURA_FALLIDA', 'PDF_NO_DISPONIBLE', 'PDF_NO_OFICIAL', 'DEPS_INCOMPLETAS']);
 const OMISION_DEFINITIVA = new Set(['YA_PUBLICADA', 'DESACTIVADO']);
 
 /** Traduce el resultado del caso de uso a un codigo HTTP. */
@@ -65,7 +65,14 @@ export function crearServidorEventos({ atender, token, rutaLinks = 'data/links.j
 
     // ---------------------------------------------------------------- SALUD
     if (req.method === 'GET' && url.pathname === '/salud') {
-      return responder(200, { ok: true, servicio: 'loa-invoice-engine', ts: new Date().toISOString() });
+      return responder(200, {
+        ok: true,
+        servicio: 'loa-invoice-engine',
+        // Trazabilidad commit↔deploy: Render inyecta estas variables.
+        commit: process.env.RENDER_GIT_COMMIT || null,
+        branch: process.env.RENDER_GIT_BRANCH || null,
+        ts: new Date().toISOString()
+      });
     }
 
     // ------------------------------------------------- EVENTO DE COMPRA

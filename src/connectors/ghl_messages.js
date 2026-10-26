@@ -25,7 +25,8 @@ export const MOTIVOS_MENSAJE = {
   DESACTIVADO: 'DESACTIVADO',
   ERROR_RED: 'ERROR_RED',
   RECHAZADO: 'RECHAZADO_POR_GHL',
-  ENLACE_NO_SINCRONIZADO: 'ENLACE_NO_SINCRONIZADO'
+  ENLACE_NO_SINCRONIZADO: 'ENLACE_NO_SINCRONIZADO',
+  SMS_DIRECTO_PROHIBIDO: 'SMS_DIRECTO_PROHIBIDO'
 };
 
 /**
@@ -111,6 +112,20 @@ export async function enviarMensajeFacturaGhl({
   const cfg = configFactura();
   const key = apiKey || cfg.ghl.apiKeyCentral;
   const vacio = { ok: false, messageId: null, status: 0, motivo: null, detalle: null };
+
+  // GOBERNANZA: el envio directo por API esta PROHIBIDO en produccion (Render).
+  // El unico canal de comunicacion es el workflow de GHL disparado por tag.
+  // Se puede habilitar solo con una autorizacion explicita y consciente.
+  const enProduccion = String(process.env.RENDER || '').trim().toLowerCase() === 'true';
+  const autorizado = String(process.env.INVOICE_ALLOW_DIRECT_SMS || '').trim().toLowerCase() === 'true';
+  if (enProduccion && !autorizado) {
+    recordAuditEvent({
+      type: 'INVOICE_SMS_BLOQUEADO_GOBERNANZA',
+      severity: 'error',
+      message: `Envio directo de SMS bloqueado en produccion para el contacto ${contactId}. Usar el workflow de GHL (tag FACTURA_LISTA).`
+    });
+    return { ...vacio, motivo: MOTIVOS_MENSAJE.SMS_DIRECTO_PROHIBIDO, detalle: 'El envio directo de SMS esta deshabilitado en produccion por gobernanza.' };
+  }
 
   if (!contactId || !mensaje || !key) {
     return { ...vacio, motivo: MOTIVOS_MENSAJE.PARAMS_INCOMPLETOS, detalle: 'Faltan contactId, mensaje o apiKey.' };
