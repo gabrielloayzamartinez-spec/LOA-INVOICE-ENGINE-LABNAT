@@ -263,7 +263,16 @@ export async function detectarOrdenesVerificadas({
     ? clausulaSqlDiaOperativo(diaOperativo, 'createdtime')
     : `createdtime >= '${escaparValor(diaOperativo.fecha)} 00:00:00'`;
 
-  const sql = `SELECT ${ORDEN_SELECT.join(', ')} FROM SalesOrder WHERE cf_882 IN ('VERIFICADA', 'ENVIADA.....') AND ${condicionFecha}${condicionSede} ORDER BY createdtime ASC LIMIT ${Math.max(lote, 100)}`;
+  // INVOICE_TRIGGER_STATUS admite varios estados separados por coma
+  // (ej: "VERIFICADA,ENVIADA"). Antes habia un literal 'ENVIADA.....' que
+  // nunca coincidia y dejaba fuera las ordenes ya enviadas.
+  const estadosPermitidos = String(estadoRequerido || 'VERIFICADA')
+    .split(',')
+    .map(e => e.trim().toUpperCase())
+    .filter(Boolean);
+  const listaEstadosSql = estadosPermitidos.map(e => `'${escaparValor(e)}'`).join(', ');
+
+  const sql = `SELECT ${ORDEN_SELECT.join(', ')} FROM SalesOrder WHERE cf_882 IN (${listaEstadosSql}) AND ${condicionFecha}${condicionSede} ORDER BY createdtime ASC LIMIT ${Math.max(lote, 100)}`;
 
   let ordenes = [];
   try {

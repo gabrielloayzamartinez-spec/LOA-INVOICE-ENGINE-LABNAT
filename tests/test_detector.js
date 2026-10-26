@@ -259,8 +259,21 @@ assert(detVerif.candidatos[0].orden.numeroOrden === 'S-101', 'Orden 1 correcta')
 assert(detVerif.candidatos[0].telefono === '3055551111', 'Extrae telefono directamente de SalesOrder');
 assert(detVerif.candidatos[0].sede === 'PALACIOS', 'Extrae sede de la orden');
 assert(detVerif.candidatos[0].contactId === 'ghl-3055551111', 'Resuelve contactId de GHL por telefono');
-assert(vtVerif.consultas[0].includes("cf_882 IN ('VERIFICADA', 'ENVIADA.....')") || vtVerif.consultas[0].includes("cf_882 = 'VERIFICADA'"), "Filtra por cf_882 = 'VERIFICADA'");
+assert(vtVerif.consultas[0].includes("cf_882 IN ('VERIFICADA')"), "Filtra por cf_882 = 'VERIFICADA'");
+assert(!vtVerif.consultas[0].includes('.....'), 'No usa el literal invalido ENVIADA.....');
 assert(vtVerif.consultas[0].includes("createdtime >= '2026-10-21 00:00:00'"), 'Filtra fechaMinima en la consulta');
+
+// Acepta varios estados configurados (INVOICE_TRIGGER_STATUS="VERIFICADA,ENVIADA")
+vtVerif.consultas = [];
+await detectarOrdenesVerificadas({
+  clienteVtiger: vtVerif,
+  fechaMinima: '2026-10-21',
+  cursor: { procesadas: {} },
+  estadoLogistico: 'VERIFICADA,ENVIADA',
+  montoMinimo: 1.00,
+  asuntosPermitidos: ['VENTA']
+});
+assert(vtVerif.consultas[0].includes("'VERIFICADA'") && vtVerif.consultas[0].includes("'ENVIADA'"), 'Acepta varios estados: VERIFICADA y ENVIADA');
 
 // ------------------------------------------------------------------------------
 try { fs.rmSync(DIR, { recursive: true, force: true }); } catch { /* limpieza best-effort */ }

@@ -3,7 +3,8 @@ import {
   perteneceAlDiaOperativo,
   clausulaSqlDiaOperativo,
   verificarCambioDia,
-  formatearFechaIsoLocal
+  formatearFechaIsoLocal,
+  resolverFechaCorte
 } from '../src/core/dia_operativo.js';
 
 let passed = 0;
@@ -45,14 +46,24 @@ console.log('\n[TEST 3] Generación de cláusula SQL de vTiger');
 const sqlClausula = clausulaSqlDiaOperativo(opHoy, 'createdtime');
 assert(sqlClausula === "createdtime >= '2026-10-23 00:00:00' AND createdtime <= '2026-10-23 23:59:59'", 'Genera el rango completo 12:00 AM a 11:59 PM en SQL');
 
-// 4. Detección de cambio de día a medianoche
+// 4. Detección de cambio de día a medianoche (determinista: sin fechas fijas)
 console.log('\n[TEST 4] Rollover y cambio de día a medianoche');
-const checkMismoDia = verificarCambioDia('2026-10-23', 'America/New_York');
+const hoyIso = obtenerDiaOperativo().fecha;
+const ayerIso = new Date(new Date(`${hoyIso}T12:00:00Z`).getTime() - 86400000).toISOString().slice(0, 10);
+const checkMismoDia = verificarCambioDia(hoyIso, 'America/New_York');
 assert(checkMismoDia.cambio === false, 'Misma fecha no reporta cambio de día');
 
-const checkDiaPasado = verificarCambioDia('2026-10-22', 'America/New_York');
+const checkDiaPasado = verificarCambioDia(ayerIso, 'America/New_York');
 assert(checkDiaPasado.cambio === true, 'Fecha de ayer sí reporta cambio de día');
-assert(checkDiaPasado.fechaActual === '2026-10-23', 'Indica la nueva fecha operativa');
+assert(checkDiaPasado.fechaActual === hoyIso, 'Indica la nueva fecha operativa');
+
+// 5. Resolución del corte de fecha (INVOICE_FECHA_MINIMA)
+console.log('\n[TEST 5] Resolución de INVOICE_FECHA_MINIMA');
+assert(resolverFechaCorte('2026-10-21') === '2026-10-21', 'Una fecha explícita se respeta tal cual');
+assert(resolverFechaCorte('HOY') === hoyIso, "'HOY' se resuelve a la fecha operativa en curso");
+assert(resolverFechaCorte('today') === hoyIso, "'today' (minúsculas) también se resuelve");
+assert(resolverFechaCorte('') === null, 'Sin valor no hay corte de fecha');
+assert(hoyIso >= resolverFechaCorte('HOY'), 'La orden de hoy ya NO queda bloqueada por el corte (antes "2026-…" < "HOY")');
 
 console.log('\n==========================================================');
 console.log(` RESULTADO: ${passed} PASS / ${failed} FAIL`);

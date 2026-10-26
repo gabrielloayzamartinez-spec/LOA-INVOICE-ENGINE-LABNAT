@@ -29,6 +29,7 @@ import { normalizarOrden, ORDEN_SELECT } from './detectar_compras_nuevas.js';
 import { publicarFacturaDeContacto } from '../core/invoice_publisher.js';
 import { recordAuditEvent } from '../core/audit.js';
 import { registrarPipeline } from '../core/pipeline.js';
+import { resolverFechaCorte } from '../core/dia_operativo.js';
 
 /** Motivos propios del canal de eventos (el resto los aporta el publicador). */
 export const MOTIVOS_EVENTO = {
@@ -148,8 +149,11 @@ export async function atenderEventoCompra({
     };
   }
 
-  // Validacion de corte de fecha estricto (no procesa ordenes anteriores a la fecha corte)
-  if (fechaMinima && orden.fecha && orden.fecha < fechaMinima) {
+  // Validacion de corte de fecha estricto (no procesa ordenes anteriores a la fecha corte).
+  // 'HOY' se resuelve a la fecha del dia operativo: comparar contra el literal 'HOY'
+  // daba verdadero siempre y bloqueaba todas las ordenes del dia.
+  const fechaCorte = resolverFechaCorte(fechaMinima);
+  if (fechaCorte && orden.fecha && String(orden.fecha).slice(0, 10) < fechaCorte) {
     return {
       ok: false,
       motivo: MOTIVOS_EVENTO.ORDEN_ANTERIOR_A_FECHA_CORTE,

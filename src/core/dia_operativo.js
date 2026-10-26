@@ -127,6 +127,22 @@ export function clausulaSqlDiaOperativo(diaOperativo = null, columna = 'createdt
 }
 
 /**
+ * Resuelve el valor de INVOICE_FECHA_MINIMA a una fecha YYYY-MM-DD comparable.
+ *   'HOY' / 'TODAY' -> fecha del día operativo en curso
+ *   ''              -> null (sin corte)
+ *   'YYYY-MM-DD'    -> se devuelve tal cual
+ *
+ * Sin esta resolución, comparar `orden.fecha < 'HOY'` da verdadero siempre
+ * (lexicográficamente '2' < 'H') y bloquea TODAS las órdenes del día.
+ */
+export function resolverFechaCorte(fechaMinima = '') {
+  const crudo = String(fechaMinima || '').trim();
+  if (!crudo) return null;
+  if (['HOY', 'TODAY'].includes(crudo.toUpperCase())) return obtenerDiaOperativo().fecha;
+  return crudo;
+}
+
+/**
  * Detecta si ha ocurrido un cambio de día calendario entre dos verificaciones.
  *
  * @param {string} fechaAnterior Fecha YYYY-MM-DD previa.

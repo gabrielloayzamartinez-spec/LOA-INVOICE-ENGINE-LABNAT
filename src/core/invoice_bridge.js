@@ -19,7 +19,7 @@
  */
 
 import { obtenerAtencionSede } from './sedes.js';
-import { perteneceAlDiaOperativo, obtenerDiaOperativo } from './dia_operativo.js';
+import { perteneceAlDiaOperativo, obtenerDiaOperativo, resolverFechaCorte } from './dia_operativo.js';
 
 /** Tag que dispara el workflow de envio. */
 export const TAG_FACTURA_LISTA = 'FACTURA_LISTA';
@@ -131,9 +131,7 @@ export function decidirPublicacion({
   }
 
   // CANDADO 3: Corte de Fecha (no procesar ordenes historicas hacia atras)
-  const fechaCorteEfectiva = (fechaMinima && ['HOY', 'TODAY'].includes(String(fechaMinima).toUpperCase().trim()))
-    ? obtenerDiaOperativo().fecha
-    : fechaMinima;
+  const fechaCorteEfectiva = resolverFechaCorte(fechaMinima);
 
   if (fechaCorteEfectiva && orden.fecha && orden.fecha < fechaCorteEfectiva) {
     return { publicar: false, motivo: MOTIVOS_PUBLICACION.ORDEN_ANTERIOR_A_FECHA_CORTE };
