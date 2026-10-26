@@ -1,7 +1,7 @@
 # Incidente 2026-10-26 — Envío de SMS con documento NO oficial
 
 - **Severidad:** Alta (comunicación masiva a clientes con documento no oficial)
-- **Estado:** **remediado** — 77/77 enlaces ya sirven el PDF oficial (verificado 26/10 19:05 UTC). Pendiente: que Render despliegue el código nuevo y decidir el SMS correctivo.
+- **Estado:** **cerrado** — 77/77 enlaces con PDF oficial, 77 PDFs no oficiales purgados (404), `RENDER_ENV.txt` retirado y Render desplegado en `d9129a2`. SMS correctivo: no enviado (decisión).
 - **Commit base:** `2d33263` (endurecimiento inicial) + parches de esta sesión (sin commit aún)
 - **Documento afectado:** PDF generado con la plantilla propia (`pdfkit`), no el ExportPDF de vTiger
 
@@ -141,11 +141,11 @@ El script **nunca genera PDFs**: solo acepta el que devuelve `ExportPDF` de vTig
 
 | # | Acción | Responsable | Estado |
 |---|---|---|---|
-| 1 | **Desplegar en Render** el commit `bd3707c` (Manual Deploy): a las 19:04 UTC `/salud` seguía sin devolver `commit`, señal de que `autoDeploy` no disparó | Usuario | ⏳ Pendiente |
+| 1 | Desplegar en Render el código con los candados | Render | ✅ `d9129a2` verificado en `/salud` (19:13 UTC) |
 | 2 | Reemplazo de los 77 enlaces por el PDF oficial | Agente | ✅ Hecho (77/77) |
-| 3 | Decidir si se envía el SMS correctivo (requiere aprobación explícita) | Usuario | ⏳ Pendiente |
-| 4 | Purgar de la Media Library los 77 PDFs no oficiales (siguen accesibles por UUID directo) | Usuario | ⏳ Pendiente |
-| 5 | Revisar `data/RENDER_ENV.txt` (obsoleto, con `VTIGER_WEB_PASSWORD` distinto) y retirarlo | Usuario | ⏳ Pendiente |
+| 3 | SMS correctivo | Usuario | ✅ **No enviado** (el enlace ya entrega el oficial); se activa con `--sms` si se decide |
+| 4 | Purgar de la Media Library los 77 PDFs no oficiales | Agente | ✅ 77/77 eliminados; 0 coincidencias restantes; muestreo de URLs viejas → 404 |
+| 5 | Retirar `data/RENDER_ENV.txt` | Agente | ✅ Eliminado (no estaba versionado) |
 
 ### Invariantes de gobernanza que ahora deben cumplirse siempre
 
@@ -154,3 +154,16 @@ El script **nunca genera PDFs**: solo acepta el que devuelve `ExportPDF` de vTig
 3. Nunca se envía SMS directo desde Render; el envío vive en el workflow de GHL.
 4. Ningún script puede saltarse `entregarFacturaDeOrden`.
 5. Un PDF sin prueba de origen oficial se rechaza por defecto.
+
+---
+
+## 8. Cierre operativo (26/10/2026, 19:13 UTC)
+
+| Punto aplicado | Resultado | Evidencia |
+|---|---|---|
+| 1. SMS correctivo | **No enviado** (decisión). El cliente que abra el SMS anterior recibe el PDF oficial | `S-97782` → 2 páginas, `Órdenes de venta: S-97782`, `total general: 300.00` |
+| 2. Purga de PDFs no oficiales | **77/77 eliminados** de la Media Library | Listado de medios: 0 coincidencias; muestreo de 6 URLs viejas → `HTTP 404` |
+| 3. `data/RENDER_ENV.txt` | **Eliminado** (no estaba versionado) | `Test-Path` → `False`; no apareció en `git status` |
+
+Además, Render desplegó el código endurecido: `GET /salud` devuelve
+`{"ok":true,"commit":"d9129a2…","branch":"main"}`, es decir, el candado de PDF oficial, el bloqueo de SMS directo y los enlaces corregidos están activos en producción.
