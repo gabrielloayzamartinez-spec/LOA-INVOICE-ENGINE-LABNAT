@@ -75,18 +75,61 @@ async function buscarContactoGhl(telefono, { fetchImpl = null, orden = null, sed
 
   const unicos = [...new Set(variantes)];
 
+  let huboRespuesta = false;
+  let ultimoStatus = 0;
+
+  const tokenInvalido = (status) => {
+    if (status !== 401 && status !== 403) return false;
+    recordAuditEvent({
+      type: 'INVOICE_GHL_TOKEN_INVALIDO',
+      severity: 'error',
+      message: `GHL rechazo la busqueda de contacto (HTTP ${status}). Revisar GHL_API_KEY_CENTRAL del entorno: sin token valido no se puede facturar.`
+    });
+    return true;
+  };
+
   for (const query of unicos) {
+    // 1) Endpoint de duplicados: el mas fiable para telefonos (el que usan los scripts).
+    try {
+      const urlDup = `${cfg.ghl.baseUrl}/contacts/search/duplicate?locationId=${encodeURIComponent(cfg.ghl.locationIdCentral)}&number=${encodeURIComponent(query)}`;
+      const res = await enviar(urlDup, { method: 'GET', headers });
+      ultimoStatus = res.status;
+      if (tokenInvalido(res.status)) return null;
+      if (res.ok) {
+        huboRespuesta = true;
+        const textoDup = await (res.text ? res.text().catch(() => '') : Promise.resolve(''));
+        const cuerpoDup = JSON.parse(textoDup || '{}');
+        const idDup = cuerpoDup?.contact?.id || null;
+        if (idDup) return idDup;
+      }
+    } catch { /* prueba la siguiente variante */ }
+
+    // 2) Busqueda general por query.
     try {
       const url = `${cfg.ghl.baseUrl}/contacts/?locationId=${encodeURIComponent(cfg.ghl.locationIdCentral)}&query=${encodeURIComponent(query)}`;
       const res = await enviar(url, { method: 'GET', headers });
-      const texto = await (res.text ? res.text().catch(() => '') : Promise.resolve(''));
-      if (!res.ok) continue;
-      const cuerpo = JSON.parse(texto);
-      const contactId = cuerpo?.contacts?.[0]?.id || cuerpo?.contact?.id || null;
-      if (contactId) return contactId;
+      ultimoStatus = res.status;
+      if (tokenInvalido(res.status)) return null;
+      if (res.ok) {
+        huboRespuesta = true;
+        const texto = await (res.text ? res.text().catch(() => '') : Promise.resolve(''));
+        const cuerpo = JSON.parse(texto || '{}');
+        const contactId = cuerpo?.contacts?.[0]?.id || cuerpo?.contact?.id || null;
+        if (contactId) return contactId;
+      }
     } catch {
       /* prueba la siguiente variante */
     }
+  }
+
+  // Si GHL no respondio nada valido, NO se crea un contacto a ciegas (evita duplicados).
+  if (!huboRespuesta) {
+    recordAuditEvent({
+      type: 'INVOICE_GHL_LOOKUP_FALLIDO',
+      severity: 'warn',
+      message: `No se pudo consultar GHL para ${digitos} (ultimo HTTP ${ultimoStatus}). No se crea contacto a ciegas.`
+    });
+    return null;
   }
 
   // Si no se encontro y viene orden, crear el contacto para que la orden no quede huerfana
@@ -291,7 +334,7 @@ async function comandoServe() {
     sede: cfg.escaneo.sede,
     filtroEstadoLogistico: cfg.escaneo.triggerStatus || 'VERIFICADA',
     fechaMinima: cfg.escaneo.fechaMinima || '2026-10-21',
-    buscarContactoGhl: (tel) => buscarContactoGhl(tel)
+    buscarContactoGhl: (tel, opts) => buscarContactoGhl(tel, opts || {})
   });
 
   const puerto = port ? Number(port) : cfg.webhook.puerto;
@@ -374,7 +417,7 @@ async function unCiclo({ cursor, rutaCursor, sedeOverride = null, diasOverride =
     soloHoy: cfg.escaneo.soloHoy,
     estadoLogistico: cfg.escaneo.triggerStatus || 'VERIFICADA',
     estadoCompra: cfg.escaneo.estadoCompra,
-    buscarContactoGhl: (tel) => buscarContactoGhl(tel)
+    buscarContactoGhl: (tel, opts) => buscarContactoGhl(tel, opts || {})
   });
 
   const podado = podarCursor(cursor, { maxEntradas: 5000 });
