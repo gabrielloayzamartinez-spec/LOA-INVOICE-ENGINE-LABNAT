@@ -31,7 +31,7 @@ import { obtenerDiaOperativo, perteneceAlDiaOperativo, clausulaSqlDiaOperativo }
 export const ORDEN_SELECT = [
   'id', 'salesorder_no', 'subject', 'contact_id', 'createdtime', 'modifiedtime',
   'hdnGrandTotal', 'sostatus', 'cf_882', 'cf_1006', 'cf_856', 'cf_858',
-  'cf_3127', 'cf_1069', 'cf_3156', 'quantity',
+  'cf_3127', 'cf_1069', 'cf_3156',
   'cf_870', 'cf_872', 'cf_876', 'cf_1053'
 ];
 
