@@ -18,6 +18,7 @@ import { configFactura } from '../config.js';
 import { ghlFetch } from '../connectors/ghl_client.js';
 import { crearClienteSesionWeb } from '../connectors/vtiger_web_session.js';
 import { subirPdfAMediaLibrary, baseGhl } from '../connectors/ghl_media.js';
+import { enviarMensajeFacturaGhl, construirTextoMensaje } from '../connectors/ghl_messages.js';
 import { entregarFacturaDeOrden } from './invoice_delivery.js';
 import { CLAVES_PUENTE_FACTURA, TAG_FACTURA_ENVIADA } from './invoice_bridge.js';
 import { recordAuditEvent } from './audit.js';
@@ -163,13 +164,41 @@ export function crearDepsFactura({ apiKeyCentral, locationIdCentral, fetchImpl =
       fetchImpl
     }),
 
-    // GOBERNANZA: El motor SOLO escribe los campos y asigna el tag FACTURA_LISTA.
-    // NUNCA envía SMS directos al cliente por API. El flujo de comunicación vive en GHL Workflow.
-    escribirContacto: async ({ contactId, customFields, tags }) => {
+    // Escribe los campos puente + tag FACTURA_LISTA, y ENVIA EL SMS con la URL
+    // oficial si INVOICE_AUTO_SEND_SMS=true. El workflow de GHL queda como
+    // respaldo opcional (si existe, poner el flag en false para no duplicar).
+    escribirContacto: async ({ contactId, customFields, tags, orden, url, contactoGhl }) => {
       const campos = await escribirCamposPuente(contactId, customFields, { headers, fetchImpl });
       if (!campos.ok) return { ok: false, detalle: `customFields: ${campos.detalle || campos.status}` };
       const etiquetas = await agregarTagsContacto(contactId, tags, { headers, fetchImpl });
       if (!etiquetas.ok) return { ok: false, detalle: `tags: ${etiquetas.detalle || etiquetas.status}` };
+
+      if (cfg.mensaje?.autoEnviar && url) {
+        const nombreCompleto = [orden?.nombreCliente, orden?.apellidoCliente].filter(Boolean).join(' ').trim()
+          || [contactoGhl?.firstName, contactoGhl?.lastName].filter(Boolean).join(' ').trim()
+          || contactoGhl?.name || '';
+        const texto = construirTextoMensaje({
+          nombreCompleto,
+          numeroOrden: orden?.numeroOrden || '',
+          urlPdf: url,
+          sede: orden?.sede || ''
+        });
+        const msgRes = await enviarMensajeFacturaGhl({
+          contactId,
+          mensaje: texto,
+          apiKey: apiKeyCentral,
+          tipo: 'SMS',
+          validarEnlace: true,
+          urlAValidar: url,
+          fetchImpl
+        });
+        if (msgRes.ok) {
+          await agregarTagsContacto(contactId, [TAG_FACTURA_ENVIADA], { headers, fetchImpl });
+          recordAuditEvent({ type: 'INVOICE_SMS_ENVIADO', severity: 'info', message: `Factura ${orden?.numeroOrden || ''} enviada por SMS al cliente (messageId: ${msgRes.messageId})` });
+        } else {
+          recordAuditEvent({ type: 'INVOICE_SMS_FALLIDO', severity: 'warn', message: `Fallo envio de SMS para ${orden?.numeroOrden || ''}: ${msgRes.motivo || msgRes.detalle}` });
+        }
+      }
 
       return { ok: true, detalle: null };
     }
