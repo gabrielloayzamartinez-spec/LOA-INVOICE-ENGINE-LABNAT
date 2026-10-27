@@ -411,34 +411,29 @@ async function comandoServe() {
   if (cfg.habilitado && cfg.escaneo.intervaloMinutos > 0) {
     linea(`\n  🚀 ACTIVANDO MOTOR AUTÓNOMO: escaneo cada ${cfg.escaneo.intervaloMinutos} minuto(s)`);
     const rutaCursor = cfg.escaneo.cursorPath;
-    let ocupado = false;
+    let cola = Promise.resolve();
 
-    const conCandado = async (fn, nombre) => {
-      if (ocupado) { linea(`  [${nombre}] Ciclo previo en curso, esperando...`); return; }
-      ocupado = true;
-      try { await fn(); } finally { ocupado = false; }
+    // Cola serializada: cada ciclo (hoy o reposición) se encola y espera su turno,
+    // en lugar de saltarse cuando el anterior sigue en curso.
+    const encolar = (fn, nombre, tipoFallo) => {
+      cola = cola.then(async () => {
+        linea(`  [${nombre}] inicia...`);
+        try { await fn(); }
+        catch (e) {
+          recordAuditEvent({ type: tipoFallo, severity: 'error', message: `${nombre}: ${e.message}` });
+          linea(`  [${nombre} ERROR] ${e.message}`);
+        }
+        linea(`  [${nombre}] termina.`);
+      });
+      return cola;
     };
 
-    const correrCicloAutonomo = async () => {
-      try {
-        await conCandado(async () => {
-          const cursor = cargarCursor(rutaCursor);
-          await unCiclo({ cursor, rutaCursor });
-        }, 'AUTO-SCAN');
-      } catch (err) {
-        recordAuditEvent({ type: 'INVOICE_CICLO_FALLIDO', severity: 'error', message: `Fallo ciclo autónomo en Render: ${err.message}` });
-        linea(`  [AUTO-SCAN ERROR] ${err.message}`);
-      }
-    };
+    const correrCicloAutonomo = () => encolar(async () => {
+      const cursor = cargarCursor(rutaCursor);
+      await unCiclo({ cursor, rutaCursor });
+    }, 'AUTO-SCAN', 'INVOICE_CICLO_FALLIDO');
 
-    const correrBackfill = async () => {
-      try {
-        await conCandado(() => backfillDiaAnterior({ rutaCursor }), 'BACKFILL');
-      } catch (err) {
-        recordAuditEvent({ type: 'INVOICE_BACKFILL_FALLIDO', severity: 'error', message: `Reposicion fallida: ${err.message}` });
-        linea(`  [BACKFILL ERROR] ${err.message}`);
-      }
-    };
+    const correrBackfill = () => encolar(() => backfillDiaAnterior({ rutaCursor }), 'BACKFILL', 'INVOICE_BACKFILL_FALLIDO');
 
     // Auto-chequeo de canales al arranque (no bloquea el servidor).
     setTimeout(verificarCanalesArranque, 3000);
