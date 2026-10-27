@@ -82,22 +82,20 @@ services:
       - key: INVOICE_SHORT_DOMAIN
         value: https://facturas.labnaturales.com
       - key: INVOICE_LINKS_PATH
-        value: data/links.json
+        value: /var/data/links.json
 
-      # --- Estado persistente (el cursor vive en data/cursor.json) ---
+      # --- Estado persistente (disco /var/data: sobrevive a los deploys) ---
       - key: INVOICE_CURSOR_PATH
-        value: data/cursor.json
+        value: /var/data/cursor.json
       - key: INVOICE_LOG_DIR
-        value: data/logs
+        value: /var/data/logs
       - key: INVOICE_PIPELINE_PATH
-        value: data/pipeline.jsonl
+        value: /var/data/pipeline.jsonl
 
-# Disco persistente: sin el, el cursor se pierde en cada deploy (no es critico:
-# el campo `Factura Nº Orden` de GHL sigue evitando duplicados, pero se pierde
-# el historial local y la auditoria).
-# Descomentar si el plan lo permite:
-#
-# disks:
-#   - name: loa-invoice-data
-#     mountPath: /var/data
-#     sizeGB: 1
+# Disco persistente: SIN EL, los enlaces registrados en caliente se pierden en
+# cada deploy (los SMS ya enviados apuntarian a 404). Obligatorio para que la
+# facturacion sea durable.
+disks:
+  - name: loa-invoice-data
+    mountPath: /var/data
+    sizeGB: 1

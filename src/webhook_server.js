@@ -26,6 +26,7 @@
  */
 
 import http from 'node:http';
+import fs from 'node:fs';
 import { recordAuditEvent } from './core/audit.js';
 import { resolverDestinoFactura, guardarEnlaceFactura } from './core/short_links.js';
 import { configFactura } from './config.js';
@@ -195,6 +196,20 @@ export function crearServidorEventos({ atender, token, rutaLinks = 'data/links.j
       return;
     }
 
+
+    // ------------------------------------ LECTURA DE ENLACES (API, protegida)
+    if (req.method === 'GET' && url.pathname === '/enlaces') {
+      const recibido = String(req.headers['x-loa-token'] || url.searchParams.get('token') || '');
+      if (!token || recibido !== token) {
+        return responder(401, { ok: false, motivo: 'NO_AUTORIZADO' });
+      }
+      try {
+        const mapa = JSON.parse(fs.readFileSync(rutaLinks, 'utf8') || '{}');
+        return responder(200, { ok: true, total: Object.keys(mapa).length, enlaces: mapa, ts: new Date().toISOString() });
+      } catch (e) {
+        return responder(500, { ok: false, motivo: String(e.message) });
+      }
+    }
 
     // ------------------------------------ REGISTRO DE ENLACE EN VIVO (API)
     if (req.method === 'POST' && url.pathname === '/enlace/registrar') {

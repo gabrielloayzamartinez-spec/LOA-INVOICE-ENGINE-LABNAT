@@ -395,6 +395,18 @@ async function comandoServe() {
   linea(`  Factura (GET) : ${url}/:numeroOrden   (ej: ${url}/S-97576)`);
   linea(`  Evento (POST) : ${url}/evento/compra   (header: x-loa-token)`);
 
+  // Sembrar el disco persistente de enlaces si viene vacio (primer deploy con disco).
+  const rutaLinksCfg = cfg.marca?.linksPath || 'data/links.json';
+  try {
+    if (rutaLinksCfg && rutaLinksCfg !== 'data/links.json' && !fs.existsSync(rutaLinksCfg) && fs.existsSync('data/links.json')) {
+      fs.mkdirSync(path.dirname(rutaLinksCfg), { recursive: true });
+      fs.copyFileSync('data/links.json', rutaLinksCfg);
+      linea(`  [DISCO] Sembrado ${rutaLinksCfg} desde data/links.json (repo).`);
+    }
+  } catch (e) {
+    linea(`  [DISCO] No se pudo sembrar ${rutaLinksCfg}: ${e.message}`);
+  }
+
   // --- MOTOR AUTONOMO CONTINUO EN LA NUBE (RENDER) ---
   if (cfg.habilitado && cfg.escaneo.intervaloMinutos > 0) {
     linea(`\n  🚀 ACTIVANDO MOTOR AUTÓNOMO: escaneo cada ${cfg.escaneo.intervaloMinutos} minuto(s)`);
@@ -461,7 +473,8 @@ async function unCiclo({ cursor, rutaCursor, sedeOverride = null, diasOverride =
     publicar: (candidato) => publicarFacturaDeContacto({
       contactId: candidato.contactId,
       orden: candidato.orden,
-      sede: candidato.sede || sedeEfectiva
+      sede: candidato.sede || sedeEfectiva,
+      fechaMinima
     }),
     cursor,
     sede: sedeEfectiva,
