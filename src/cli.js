@@ -35,7 +35,7 @@ import { cargarCursor, guardarCursor, podarCursor, ejecutarCiclo, normalizarOrde
 import { atenderEventoCompra } from './jobs/atender_evento.js';
 import { iniciarServidorEventos } from './webhook_server.js';
 import { generarReporteDiario } from './core/daily_report.js';
-import { obtenerDiaOperativo, verificarCambioDia } from './core/dia_operativo.js';
+import { obtenerDiaOperativo, verificarCambioDia, fechaAnterior } from './core/dia_operativo.js';
 import { obtenerAtencionSede } from './core/sedes.js';
 
 cargarEnv();
@@ -315,6 +315,49 @@ async function comandoPublish() {
 }
 
 // ------------------------------------------------------------------------------
+// AUTO-CHEQUEO DE CANALES (evita operar "a ciegas")
+// ------------------------------------------------------------------------------
+async function verificarCanalesArranque() {
+  const problemas = [];
+  try {
+    const res = await fetch(`${cfg.ghl.baseUrl}/contacts/?locationId=${encodeURIComponent(cfg.ghl.locationIdCentral)}&limit=1`, {
+      headers: { Authorization: `Bearer ${cfg.ghl.apiKeyCentral}`, Version: '2021-07-28', Accept: 'application/json' },
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!res.ok) problemas.push(`GHL HTTP ${res.status}`);
+  } catch (e) {
+    problemas.push(`GHL ${String(e.message).slice(0, 80)}`);
+  }
+
+  try {
+    const ws = crearClienteSesionWeb();
+    await ws.asegurarSesion();
+  } catch (e) {
+    problemas.push(`vTiger ${String(e.message).slice(0, 80)}`);
+  }
+
+  if (problemas.length) {
+    recordAuditEvent({ type: 'INVOICE_ARRAQUE_CANAL_FALLIDO', severity: 'error', message: `Auto-chequeo de arranque: ${problemas.join('; ')}` });
+    linea(`  ⚠️  [ARRAQUE] ${problemas.join('; ')}`);
+  } else {
+    recordAuditEvent({ type: 'INVOICE_ARRAQUE_OK', severity: 'info', message: 'Canales GHL y vTiger verificados al arranque.' });
+    linea('  ✅ [ARRAQUE] GHL y vTiger verificados.');
+  }
+}
+
+// ------------------------------------------------------------------------------
+// REPOSICION DEL DIA ANTERIOR (recupera lo que el rollover de "solo hoy" dejó)
+// ------------------------------------------------------------------------------
+async function backfillDiaAnterior({ rutaCursor }) {
+  const ayer = fechaAnterior();
+  const cursor = cargarCursor(rutaCursor);
+  const resumen = await unCiclo({ cursor, rutaCursor, fechaMinimaOverride: ayer, soloHoyOverride: false });
+  const publicadas = resumen.publicaciones.filter(p => p.resultado?.publicado).length;
+  recordAuditEvent({ type: 'INVOICE_BACKFILL', severity: 'info', message: `Reposicion de ${ayer}: ${publicadas} publicadas de ${resumen.deteccion.candidatos.length} candidatos.` });
+  linea(`  [BACKFILL ${ayer}] ${publicadas} publicadas.`);
+}
+
+// ------------------------------------------------------------------------------
 // COMANDO: serve  (DISPARADOR UNICO por evento — modo recomendado)
 // ------------------------------------------------------------------------------
 async function comandoServe() {
@@ -354,35 +397,45 @@ async function comandoServe() {
 
   // --- MOTOR AUTONOMO CONTINUO EN LA NUBE (RENDER) ---
   if (cfg.habilitado && cfg.escaneo.intervaloMinutos > 0) {
-    linea(`\n  🚀 ACTIVANDO MOTOR AUTÓNOMO EN RENDER: escaneo cada ${cfg.escaneo.intervaloMinutos} minuto(s)`);
+    linea(`\n  🚀 ACTIVANDO MOTOR AUTÓNOMO: escaneo cada ${cfg.escaneo.intervaloMinutos} minuto(s)`);
     const rutaCursor = cfg.escaneo.cursorPath;
-    let ejecutando = false;
+    let ocupado = false;
+
+    const conCandado = async (fn, nombre) => {
+      if (ocupado) { linea(`  [${nombre}] Ciclo previo en curso, esperando...`); return; }
+      ocupado = true;
+      try { await fn(); } finally { ocupado = false; }
+    };
 
     const correrCicloAutonomo = async () => {
-      if (ejecutando) {
-        linea('  [AUTO-SCAN] Ciclo previo aún en curso, esperando próximo turno...');
-        return;
-      }
-      ejecutando = true;
       try {
-        const cursor = cargarCursor(rutaCursor);
-        await unCiclo({ cursor, rutaCursor });
+        await conCandado(async () => {
+          const cursor = cargarCursor(rutaCursor);
+          await unCiclo({ cursor, rutaCursor });
+        }, 'AUTO-SCAN');
       } catch (err) {
-        recordAuditEvent({
-          type: 'INVOICE_CICLO_FALLIDO',
-          severity: 'error',
-          message: `Fallo ciclo autónomo en Render: ${err.message}`
-        });
+        recordAuditEvent({ type: 'INVOICE_CICLO_FALLIDO', severity: 'error', message: `Fallo ciclo autónomo en Render: ${err.message}` });
         linea(`  [AUTO-SCAN ERROR] ${err.message}`);
-      } finally {
-        ejecutando = false;
       }
     };
 
-    // Primer escaneo tras 10s de arranque seguro
+    const correrBackfill = async () => {
+      try {
+        await conCandado(() => backfillDiaAnterior({ rutaCursor }), 'BACKFILL');
+      } catch (err) {
+        recordAuditEvent({ type: 'INVOICE_BACKFILL_FALLIDO', severity: 'error', message: `Reposicion fallida: ${err.message}` });
+        linea(`  [BACKFILL ERROR] ${err.message}`);
+      }
+    };
+
+    // Auto-chequeo de canales al arranque (no bloquea el servidor).
+    setTimeout(verificarCanalesArranque, 3000);
+    // Primer escaneo (hoy) y reposición del día anterior tras arrancar.
     setTimeout(correrCicloAutonomo, 10000);
-    // Ciclos continuos recurrentes
+    setTimeout(correrBackfill, 20000);
+    // Recurrentes: hoy cada N min, reposición del día anterior cada 60 min.
     setInterval(correrCicloAutonomo, cfg.escaneo.intervaloMinutos * 60 * 1000);
+    setInterval(correrBackfill, 60 * 60 * 1000);
   }
 
   linea('');
@@ -392,13 +445,15 @@ async function comandoServe() {
 // ------------------------------------------------------------------------------
 // COMANDOS: once / scan  (MODO RECUPERACION — barrido)
 // ------------------------------------------------------------------------------
-async function unCiclo({ cursor, rutaCursor, sedeOverride = null, diasOverride = null, loteOverride = null } = {}) {
+async function unCiclo({ cursor, rutaCursor, sedeOverride = null, diasOverride = null, loteOverride = null, fechaMinimaOverride = null, soloHoyOverride = null } = {}) {
   const vt = clienteVtiger();
   const sedeEfectiva = sedeOverride !== null && sedeOverride !== undefined ? String(sedeOverride).toUpperCase() : cfg.escaneo.sede;
   const diasEfectivos = diasOverride !== null && diasOverride !== undefined ? Number(diasOverride) : cfg.escaneo.dias;
   const loteEfectivo = loteOverride !== null && loteOverride !== undefined ? Number(loteOverride) : cfg.escaneo.lote;
+  const fechaMinima = fechaMinimaOverride !== null && fechaMinimaOverride !== undefined ? String(fechaMinimaOverride) : cfg.escaneo.fechaMinima;
+  const soloHoy = soloHoyOverride !== null && soloHoyOverride !== undefined ? Boolean(soloHoyOverride) : cfg.escaneo.soloHoy;
 
-  const diaOp = obtenerDiaOperativo();
+  const diaOp = fechaMinima && fechaMinima !== 'HOY' ? obtenerDiaOperativo(fechaMinima) : obtenerDiaOperativo();
   linea(`\n[DÍA OPERATIVO ACTIVO] ${diaOp.descripcion} (Horario estricto: 12:00:00 AM a 11:59:59 PM)`);
 
   const resumen = await ejecutarCiclo({
@@ -413,8 +468,8 @@ async function unCiclo({ cursor, rutaCursor, sedeOverride = null, diasOverride =
     dias: diasEfectivos,
     lote: loteEfectivo,
     modoDeteccion: 'ordenes_verificadas',
-    fechaMinima: cfg.escaneo.fechaMinima,
-    soloHoy: cfg.escaneo.soloHoy,
+    fechaMinima,
+    soloHoy,
     estadoLogistico: cfg.escaneo.triggerStatus || 'VERIFICADA',
     estadoCompra: cfg.escaneo.estadoCompra,
     buscarContactoGhl: (tel, opts) => buscarContactoGhl(tel, opts || {})

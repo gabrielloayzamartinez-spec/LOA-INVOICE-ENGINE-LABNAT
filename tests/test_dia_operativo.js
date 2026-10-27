@@ -4,7 +4,8 @@ import {
   clausulaSqlDiaOperativo,
   verificarCambioDia,
   formatearFechaIsoLocal,
-  resolverFechaCorte
+  resolverFechaCorte,
+  fechaAnterior
 } from '../src/core/dia_operativo.js';
 
 let passed = 0;
@@ -64,6 +65,13 @@ assert(resolverFechaCorte('HOY') === hoyIso, "'HOY' se resuelve a la fecha opera
 assert(resolverFechaCorte('today') === hoyIso, "'today' (minúsculas) también se resuelve");
 assert(resolverFechaCorte('') === null, 'Sin valor no hay corte de fecha');
 assert(hoyIso >= resolverFechaCorte('HOY'), 'La orden de hoy ya NO queda bloqueada por el corte (antes "2026-…" < "HOY")');
+
+// 6. Fecha anterior (reposición automática del día previo)
+console.log('\n[TEST 6] Fecha anterior para reposición');
+assert(fechaAnterior('2026-10-27') === '2026-10-26', 'Un día antes de 27 es 26');
+assert(fechaAnterior('2026-10-01') === '2026-09-30', 'Cruce de mes');
+assert(fechaAnterior('2026-01-01') === '2025-12-31', 'Cruce de año');
+assert(/^\d{4}-\d{2}-\d{2}$/.test(fechaAnterior()), 'Sin argumento devuelve una fecha válida');
 
 console.log('\n==========================================================');
 console.log(` RESULTADO: ${passed} PASS / ${failed} FAIL`);

@@ -143,6 +143,15 @@ export function resolverFechaCorte(fechaMinima = '') {
 }
 
 /**
+ * Devuelve la fecha YYYY-MM-DD del día calendario inmediatamente anterior.
+ * Util para la reposición automática de órdenes que quedaron sin facturar al
+ * cambiar el día (el barrido "solo hoy" las descarta para siempre).
+ */
+export function fechaAnterior(fechaIso = obtenerDiaOperativo().fecha) {
+  return new Date(new Date(`${String(fechaIso).slice(0, 10)}T12:00:00Z`).getTime() - 86400000).toISOString().slice(0, 10);
+}
+
+/**
  * Detecta si ha ocurrido un cambio de día calendario entre dos verificaciones.
  *
  * @param {string} fechaAnterior Fecha YYYY-MM-DD previa.
